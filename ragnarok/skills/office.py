@@ -20,6 +20,7 @@ first row is the header; numbers become numbers; a cell starting with = is a for
 from __future__ import annotations
 
 import io
+import json
 import re
 import zipfile
 from dataclasses import dataclass, field
@@ -496,3 +497,63 @@ def build_xlsx(title: str, rows: list[list[str]]) -> bytes:
         ),
     }
     return _zip(parts)
+
+
+def table_from_arrays(columns: list[str], rows: list[list[object]]) -> list[list[str]]:
+    """Header plus rows from separate arrays (no text to split, so no row can be lost)."""
+    width = max([len(columns), *(len(r) for r in rows)]) if columns else 0
+    if not columns or not any(str(c).strip() for c in columns):
+        raise ValueError("give the column names")
+    if len(rows) > MAX_ROWS:
+        raise ValueError(f"at most {MAX_ROWS} rows")
+    if width > MAX_COLUMNS:
+        raise ValueError(f"at most {MAX_COLUMNS} columns")
+
+    def text(value: object) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+        return str(value).strip()
+
+    table = [[text(c) for c in columns], *[[text(c) for c in row] for row in rows]]
+    return [row + [""] * (width - len(row)) for row in table]
+
+
+def lenient_list(value: object) -> object:
+    """A list the model wrote as text: '[1, 2], [3, 4]' or '["a", 1], "b", 2]' (brackets lost).
+
+    Anything that is already a list, or cannot be understood, is returned unchanged so normal
+    validation still reports it.
+    """
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    for attempt in (text, f"[{text}]"):
+        try:
+            parsed = json.loads(attempt)
+        except ValueError:
+            continue
+        if isinstance(parsed, list):
+            return parsed
+    pieces = [p.strip().lstrip("[").strip().rstrip(",").strip() for p in re.split(r"\]\s*,?", text)]
+    rows = []
+    for piece in pieces:
+        if not piece:
+            continue
+        try:
+            row = json.loads(f"[{piece}]")
+        except ValueError:
+            return value
+        rows.append(row)
+    return rows if rows else value
+
+
+def lenient_names(value: object) -> object:
+    """Column names written as 'Item, Cost' or '["Item", "Cost"]' instead of a list."""
+    if not isinstance(value, str):
+        return value
+    parsed = lenient_list(value)
+    if isinstance(parsed, list) and all(isinstance(x, str) for x in parsed) and parsed:
+        return parsed
+    return [part.strip().strip("\"'") for part in value.strip("[] ").split(",") if part.strip()]

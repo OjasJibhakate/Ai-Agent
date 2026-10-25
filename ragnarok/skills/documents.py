@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Literal
 from xml.sax.saxutils import escape
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from ragnarok.policy.permissions import Risk
 from ragnarok.runtime.tools import Tool, ToolArgs, ToolResult
@@ -27,9 +27,12 @@ from ragnarok.skills.folders import documents_folder
 from ragnarok.skills.office import (
     build_pptx,
     build_xlsx,
+    lenient_list,
+    lenient_names,
     parse_outline,
-    parse_table,
+    table_from_arrays,
 )
+from ragnarok.skills.steps import reply
 
 MAX_CHARS = 20_000
 RESERVED = {
@@ -155,18 +158,28 @@ class CreatePresentationArgs(ToolArgs):
 
 class CreateSpreadsheetArgs(ToolArgs):
     title: str = Field(min_length=2, max_length=120, description="The name of the spreadsheet.")
-    table: str = Field(
-        min_length=3,
-        max_length=MAX_CHARS,
-        description="One row per line, cells separated by |. The first row holds the column "
-        "names. Numbers stay numbers; start a cell with = for a formula like =SUM(B2:B5).",
+    columns: list[str] = Field(
+        min_length=1, max_length=50, description="The column names, in order, e.g. Item, Cost."
+    )
+    rows: list[list[str | int | float]] = Field(
+        default_factory=list,
+        max_length=2000,
+        description="One list of cell values per row. Numbers stay numbers; a cell starting "
+        "with = is a formula like =SUM(B2:B5).",
     )
 
+    @field_validator("columns", mode="before")
+    @classmethod
+    def _columns_as_text(cls, value: object) -> object:
+        return lenient_names(value)
 
-def _write(path: Path, data: bytes) -> None:
-    part = path.with_name(path.name + ".part")
-    part.write_bytes(data)
-    os.replace(part, path)  # a crash leaves a .part file, never half a document
+    @field_validator("rows", mode="before")
+    @classmethod
+    def _rows_as_text(cls, value: object) -> object:
+        rows = lenient_list(value)
+        if isinstance(rows, list) and rows and not any(isinstance(r, list) for r in rows):
+            return [rows]  # one flat row of values
+        return rows
 
 
 def document_tools(documents: Path | None = None) -> list[Tool]:
@@ -186,7 +199,7 @@ def document_tools(documents: Path | None = None) -> list[Tool]:
         except OSError as exc:
             return f"error: I couldn't save the {noun} ({type(exc).__name__})."
         verb = "Already created" if already else "Created"
-        return ToolResult(f"{verb} {path.name}{detail} in {folder}.", final=True)
+        return reply(f"{verb} {path.name}{detail} in {folder}.")
 
     async def create_document(args: CreateDocumentArgs) -> str | ToolResult:
         if args.format == "docx":
@@ -208,11 +221,11 @@ def document_tools(documents: Path | None = None) -> list[Tool]:
 
     async def create_spreadsheet(args: CreateSpreadsheetArgs) -> str | ToolResult:
         try:
-            rows = parse_table(args.table)
+            table = table_from_arrays(args.columns, args.rows)
         except ValueError as exc:
             return f"error: {exc}"
-        data = await asyncio.to_thread(build_xlsx, args.title, rows)
-        detail = f" ({len(rows) - 1} rows, {len(rows[0])} columns)"
+        data = await asyncio.to_thread(build_xlsx, args.title, table)
+        detail = f" ({len(table) - 1} rows, {len(table[0])} columns)"
         return await save(args.title, "xlsx", data, "spreadsheet", detail)
 
     common = {

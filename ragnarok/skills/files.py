@@ -200,9 +200,61 @@ class FileAccess:
             raise AmbiguousName(f"{rel!r} is in more than one place ({where}); say which one")
         if seen:
             return next(iter(seen))
+        if not re.search(r"[\\/]", rel):  # a bare file name: look a few folders down as well
+            deeper = self._named_below(rel)
+            if len(deeper) > 1:
+                where = "; ".join(sorted(self.display(p) for p in deeper)[:5])
+                raise AmbiguousName(f"{rel!r} is in more than one place ({where}); say which one")
+            if deeper:
+                return deeper[0]
+            loose = self._fuzzy_below(
+                rel
+            )  # "deep learning" -> Deep_learning, "climate ppt" -> a deck
+            if len(loose) > 1:
+                where = "; ".join(sorted(self.display(p) for p in loose)[:5])
+                raise AmbiguousName(f"{rel!r} could be several things ({where}); say which one")
+            if loose:
+                return loose[0]
         if error is not None:
             raise error
         return path  # type: ignore[return-value]
+
+    def _fuzzy_below(self, text: str) -> list[Path]:
+        """Items whose names contain every word of `text`, best first: an exact match ignoring
+        spaces, case and punctuation, otherwise the shallowest ones."""
+        tokens = query_tokens(text)
+        if not tokens:
+            return []
+        deadline = time.monotonic() + TIME_BUDGET_S / 2
+        hits: list[Path] = []
+        for entry, _is_dir in self.walk(self.roots, deadline):
+            if all(_matches(t, _norm(entry.name)) for t in tokens):
+                real = Path(entry.path).resolve()
+                if self.allowed(real) and not self.denied(real) and real not in hits:
+                    hits.append(real)
+        for same in (
+            lambda p: _norm(p.name) == _norm(text),
+            lambda p: _norm(p.stem) == _norm(text),
+        ):
+            exact = [p for p in hits if same(p)]
+            if exact:
+                return exact
+        if not hits:
+            return []
+        shallow = min(_depth(p, self.roots) for p in hits)
+        return [p for p in hits if _depth(p, self.roots) == shallow]
+
+    def _named_below(self, name: str) -> list[Path]:
+        """Files and folders called exactly `name` anywhere in the usual folders (short search)."""
+        wanted = name.lower()
+        hits: list[Path] = []
+        deadline = time.monotonic() + TIME_BUDGET_S / 2
+        for entry, _is_dir in self.walk(self.roots, deadline):
+            if entry.name.lower() == wanted:
+                real = Path(entry.path).resolve()
+                if self.allowed(real) and not self.denied(real) and real not in hits:
+                    hits.append(real)
+        return hits
 
     def roots_for(self, folder: str) -> list[Path]:
         name = folder.strip().lower()

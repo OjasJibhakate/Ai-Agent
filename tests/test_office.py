@@ -22,9 +22,12 @@ from ragnarok.skills.office import (
     _column_name,
     build_pptx,
     build_xlsx,
+    lenient_list,
+    lenient_names,
     parse_outline,
     parse_table,
     sheet_name,
+    table_from_arrays,
 )
 from tests.test_m2_memory import key  # noqa: F401  (fixture)
 from tests.test_m4_agent import build, call, kinds, say
@@ -297,11 +300,14 @@ async def test_make_a_presentation_end_to_end(tmp_path):
 
 
 async def test_make_a_spreadsheet_end_to_end(tmp_path):
-    table = (
-        "Item | Jan | Feb\nRent | 9000 | 9000\nFood | 3500 | 3200\n"
-        "Total | =SUM(B2:B3) | =SUM(C2:C3)"
+    rows = [["Rent", 9000, 9000], ["Food", 3500, 3200.5], ["Total", "=SUM(B2:B3)", "=SUM(C2:C3)"]]
+    result = await make(
+        tmp_path,
+        "create_spreadsheet",
+        title="Monthly expenses",
+        columns=["Item", "Jan", "Feb"],
+        rows=rows,
     )
-    result = await make(tmp_path, "create_spreadsheet", title="Monthly expenses", table=table)
     path = tmp_path / "Ragnarok" / "Monthly expenses.xlsx"
     assert result.text == f"Created Monthly expenses.xlsx (3 rows, 3 columns) in {path.parent}."
     assert (
@@ -325,8 +331,8 @@ async def test_asking_twice_makes_one_file_and_a_changed_one_never_overwrites(tm
 async def test_bad_input_is_explained_not_raised(tmp_path):
     out = await make(tmp_path, "create_presentation", title="Empty", outline="   \n  ")
     assert out.startswith("error:") and "outline is empty" in out
-    out = await make(tmp_path, "create_spreadsheet", title="Empty", table="   ")
-    assert out.startswith("error:") and "empty" in out
+    out = await make(tmp_path, "create_spreadsheet", title="Empty", columns=["  "])
+    assert out.startswith("error:") and "column names" in out
     assert not (tmp_path / "Ragnarok").exists() or not list((tmp_path / "Ragnarok").iterdir())
 
 
@@ -358,7 +364,7 @@ def test_the_tools_declare_what_the_rules_require(tmp_path):
     with pytest.raises(ValueError):
         CreatePresentationArgs(title="x", outline="# a")
     with pytest.raises(ValueError):
-        CreateSpreadsheetArgs(title="ok", table="")
+        CreateSpreadsheetArgs(title="ok", columns=[])
 
 
 async def test_make_a_ppt_on_a_topic_through_the_agent(tmp_path, key):  # noqa: F811
@@ -426,3 +432,87 @@ def test_helper_regex_for_the_dangerous_formula_test_is_not_vacuous():
     # guards the test above: a formula that IS safe must produce a real <f> element
     assert "<f>" in sheet_xml([["h"], ["=SUM(A1:A2)"]])
     assert re.search(r"<f>", sheet_xml([["h"], ["=1+1"]]))
+
+
+# ---- spreadsheets from arrays (a one-line table cannot lose its rows) ----------------------
+
+
+def test_arrays_become_a_table_with_numbers_kept_and_short_rows_padded():
+    table = table_from_arrays(
+        ["Item", "Cost"], [["Pen", 12.5], ["Book", 3.0], ["Gift"], ["Tip", None]]
+    )
+    assert table == [["Item", "Cost"], ["Pen", "12.5"], ["Book", "3"], ["Gift", ""], ["Tip", ""]]
+
+
+def test_arrays_wider_than_the_header_are_padded_on_the_header_too():
+    assert table_from_arrays(["a"], [["1", "2", "3"]]) == [["a", "", ""], ["1", "2", "3"]]
+
+
+@pytest.mark.parametrize(
+    ("columns", "rows", "problem"),
+    [([], [], "column names"), (["", " "], [], "column names"),
+     (["c"] * 51, [], "columns"), (["a"], [["x"]] * 2001, "rows")],
+)  # fmt: skip
+def test_bad_arrays_are_explained(columns, rows, problem):
+    with pytest.raises(ValueError, match=problem):
+        table_from_arrays(columns, rows)
+
+
+async def test_the_model_cannot_lose_rows_by_forgetting_newlines(tmp_path):
+    # the real model once sent the whole table as one line: with arrays each row is its own item
+    rows = [["Food", 120], ["Travel", 80], ["Fun", 40]]
+    out = await make(
+        tmp_path, "create_spreadsheet", title="Spend", columns=["Item", "Cost"], rows=rows
+    )
+    assert "(3 rows, 2 columns)" in out.text
+    sheet = (tmp_path / "Ragnarok" / "Spend.xlsx").read_bytes()
+    xml = assert_package_is_consistent(sheet)["xl/worksheets/sheet1.xml"].decode()
+    assert xml.count("<row ") == 4 and "<v>120</v>" in xml
+
+
+# ---- lists the model wrote as text ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '[["Housing", 500, 0], ["Food", 300, 0]]',  # a proper JSON list, as a string
+        '["Housing", 500, 0], ["Food", 300, 0]',  # the outer brackets are missing
+        '["Housing", 500, 0], "Food", 300, 0]',  # an opening bracket is missing too (seen live)
+        '["Housing", 500, 0], ["Food", 300, 0],',  # a trailing comma
+    ],
+)
+def test_rows_written_as_text_are_understood(text):
+    assert lenient_list(text) == [["Housing", 500, 0], ["Food", 300, 0]]
+
+
+@pytest.mark.parametrize("value", [[["a", 1]], None, 5, "", "not a list at all", '["a", 1], oops]'])
+def test_anything_else_is_left_for_normal_validation(value):
+    got = lenient_list(value)
+    assert got == value or got == []
+
+
+@pytest.mark.parametrize(
+    "text", ["Item, Cost", '["Item", "Cost"]', "[Item, Cost]", "'Item', 'Cost'", "Item,Cost,"]
+)
+def test_column_names_written_as_text_are_understood(text):
+    assert lenient_names(text) == ["Item", "Cost"]
+
+
+async def test_the_real_failure_a_budget_table_sent_as_text(tmp_path):
+    # exactly what the model sent three times: rows as one string, brackets half missing
+    out = await make(
+        tmp_path,
+        "create_spreadsheet",
+        title="College Student Budget",
+        columns="Category, Budgeted Amount, Spent, Remaining",
+        rows='["Housing", 500, 0, 500], "Food", 300, 300], "Transportation", 150, 0, 150]',
+    )
+    assert "(3 rows, 4 columns)" in out.text
+    xml = (tmp_path / "Ragnarok" / "College Student Budget.xlsx").read_bytes()
+    assert open_zip(xml).read("xl/worksheets/sheet1.xml").decode().count("<row ") == 4
+
+
+async def test_one_flat_row_is_still_a_row(tmp_path):
+    out = await make(tmp_path, "create_spreadsheet", title="One", columns=["a", "b"], rows=["x", 1])
+    assert "(1 rows, 2 columns)" in out.text

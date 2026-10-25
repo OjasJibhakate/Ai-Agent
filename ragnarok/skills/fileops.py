@@ -29,10 +29,12 @@ from pydantic import Field
 
 from ragnarok.policy.modes import Mode
 from ragnarok.policy.permissions import Risk
-from ragnarok.runtime.tools import CURRENT_TEXT, Tool, ToolArgs, ToolResult
+from ragnarok.runtime.tools import Tool, ToolArgs
+from ragnarok.skills.downloads import PROGRAM_EXTENSIONS
 from ragnarok.skills.extract import ExtractError, text_of
 from ragnarok.skills.files import TEXT_EXT, AmbiguousName, FileAccess, default_roots
 from ragnarok.skills.pathguard import PathGuard, PathRefused
+from ragnarok.skills.steps import reply
 
 MAX_NEW_FILE_CHARS = 200_000
 MAX_EDIT_BYTES = 2_000_000
@@ -45,6 +47,13 @@ AUTORUN_NAMES = {
     ".bash_profile", ".zshrc", ".profile", "sitecustomize.py", "usercustomize.py",
 }  # fmt: skip
 Recycler = Callable[[Path], None]
+
+
+def open_with_default_program(path: Path) -> None:
+    """Open a file or folder the way a double-click would."""
+    if sys.platform != "win32":
+        raise FileOpError("opening files is only set up on Windows")
+    os.startfile(str(path))
 
 
 class FileOpError(ValueError):
@@ -118,13 +127,7 @@ def _tree_size(path: Path) -> tuple[int, int]:
     return total, files
 
 
-def _final(text: str) -> bool:
-    """End the turn with this tool's own sentence, unless the request has more steps to go."""
-    return not re.search(r"\b(and|then|after that|also|next)\b", CURRENT_TEXT.get(), re.IGNORECASE)
-
-
-def _reply(text: str) -> str | ToolResult:
-    return ToolResult(text, final=True) if _final(text) else text
+_reply = reply  # the shared rule for ending a turn
 
 
 # ---- arguments -----------------------------------------------------------------------------------
@@ -169,6 +172,10 @@ class DeletePathArgs(ToolArgs):
     path: str = Field(min_length=1, max_length=400, description=_PATH)
 
 
+class OpenPathArgs(ToolArgs):
+    path: str = Field(min_length=1, max_length=400, description=_PATH)
+
+
 class ExtractTextArgs(ToolArgs):
     source: str = Field(
         min_length=1, max_length=400, description="The PDF, Word, PowerPoint or text file."
@@ -189,7 +196,9 @@ def file_op_tools(
     mode: Mode | None = None,
     recycler: Recycler = send_to_recycle_bin,
     data_dirs: list[Path] | None = None,
+    opener: Recycler | None = None,
 ) -> list[Tool]:
+    opener = opener or open_with_default_program
     access = FileAccess(roots if roots is not None else default_roots(home), home, mode, data_dirs)
     guard: PathGuard = access.guard
 
@@ -381,6 +390,18 @@ def file_op_tools(
         extent = f"{pages} pages, " if pages else ""
         return f"Saved the text of {source.name} ({extent}{len(text):,} characters) to {target}"
 
+    # -- open_path
+    def _open(args: OpenPathArgs) -> str:
+        path = find(args.path, readable)
+        if not path.exists():
+            raise FileOpError(f"{path} does not exist")
+        if path.is_file() and path.suffix.lower() in PROGRAM_EXTENSIONS:
+            raise FileOpError(
+                f"{path.name} is a program or script; I never start those, open it yourself"
+            )
+        opener(path)
+        return f"Opened {path.name or path}"
+
     def wrap(fn: Callable) -> Callable:
         async def handler(args):
             try:
@@ -478,5 +499,18 @@ def file_op_tools(
             sandbox="workspace-write",
             fs={"read": ["the user's profile folder"], **write_fs},
             handler=wrap(_extract),
+        ),
+        Tool(
+            name="open_path",
+            description="Open a file or folder with the program Windows uses for it (a deck in "
+            "PowerPoint, a folder in Explorer). Use it when the user asks you to open a file or "
+            "folder.",
+            args_model=OpenPathArgs,
+            risk=Risk.R1,  # opens a window; closing it undoes it
+            idempotent=True,
+            timeout_s=20,
+            sandbox="full-access",  # the opening program runs as the user, outside any sandbox
+            fs={"read": ["the user's profile folder"]},
+            handler=wrap(_open),
         ),
     ]

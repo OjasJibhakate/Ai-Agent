@@ -526,3 +526,9 @@ Use it for a few days (`memory stats` shows what is happening); then a held-out 
 
 ### Not done / next (plan for the 6 hours)
 Variety and follow-up robustness, `open_path` ("open the ppt you made"), latency with 30+ tools, triggers (reminders, FR4), a visible plan and check for multi-step requests (FR3), crash/resume for the new tools, a demo script, README.
+
+### 2026-10-26 later - everyday battery 58/60, spreadsheet arrays, open_path, triggers started
+- `bench/daily_tasks.py` now has 60 requests (typos, bare file names, follow-ups, multi-step, plain chat, honest refusals): **58/60** on the real model. The two failures were a spreadsheet the model sent as half-bracketed text (fixed: `columns`/`rows` arrays plus a lenient parser for lists written as text; 3/3 after) and "remind me ..." (needs triggers, in progress).
+- New: `open_path` (open a file or folder; never programs or scripts), file lookup by loose name ("deep learning" finds `Deep_learning`, "climate ppt" finds the deck; same-level duplicates are listed, not guessed), one shared rule (`skills/steps.py`) for when a tool may end the turn so "make a ppt and then open it" keeps going.
+- Triggers (FR4) started: schedule parser (`triggers/schedule.py`: "in 10 minutes", "tomorrow at 9am", "every weekday at 8", cron with a 5-minute floor), vault tables for triggers, fires and the Inbox (migration 0005), `TriggerStore`. **Not yet done:** engine, notifications, tools, chat/daemon wiring, tests for the triggers package.
+- 1025 tests pass; ruff clean.

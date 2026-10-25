@@ -80,6 +80,7 @@ class World:
     catalog: FakeCatalog
     browsers: FakeBrowsers
     bin: Bin
+    opened: list[Path] = field(default_factory=list)
     approvals: list[str] = field(default_factory=list)
     turns: list[TurnResult] = field(default_factory=list)
 
@@ -305,6 +306,97 @@ def check_todo(w: World) -> str | None:
     return f"no file with the three to-do items (tools: {w.tools_used})"
 
 
+def check_opened_file(*names: str):
+    def check(w: World) -> str | None:
+        got = [p.name.lower() for p in w.opened]
+        if all(any(n.lower() in g for g in got) for n in names):
+            return None
+        return f"it did not open {names} (opened {got}; tools {w.tools_used})"
+
+    return check
+
+
+def check_text_file(name_part: str, *needles: str):
+    def check(w: World) -> str | None:
+        for p in w.files():
+            if name_part.lower() in p.name.lower() and p.suffix in (
+                ".txt",
+                ".md",
+                ".html",
+                ".docx",
+            ):
+                text = (
+                    read_zip_text(p, "word/document.xml")
+                    if p.suffix == ".docx"
+                    else p.read_text("utf-8", "replace")
+                )
+                if all(n.lower() in text.lower() for n in needles):
+                    return None
+        return f"no '{name_part}' file containing {needles} (tools: {w.tools_used})"
+
+    return check
+
+
+def check_all(*checks):
+    def check(w: World) -> str | None:
+        for one in checks:
+            why = one(w)
+            if why:
+                return why
+        return None
+
+    return check
+
+
+def check_two_folders(w: World) -> str | None:
+    names = {p.name.lower() for p in w.home.rglob("*") if p.is_dir()}
+    return None if {"college", "work"} <= names else f"missing a folder (tools: {w.tools_used})"
+
+
+def check_moved_into(folder: str, name: str):
+    def check(w: World) -> str | None:
+        hits = [p for p in w.home.rglob(name) if p.parent.name.lower() == folder.lower()]
+        return None if hits else f"{name} is not inside {folder} (tools: {w.tools_used})"
+
+    return check
+
+
+def check_copied_bare(w: World) -> str | None:
+    both = (w.home / "Desktop" / "notes.txt").exists() and (
+        w.home / "Documents" / "notes.txt"
+    ).exists()
+    return None if both else f"notes.txt was not copied to Documents (tools: {w.tools_used})"
+
+
+def check_moved_to_downloads(w: World) -> str | None:
+    moved = (w.home / "Downloads" / "old.txt").exists() and not (
+        w.home / "Desktop" / "old.txt"
+    ).exists()
+    return None if moved else f"old.txt was not moved to Downloads (tools: {w.tools_used})"
+
+
+def check_answer_any(*needles: str):
+    def check(w: World) -> str | None:
+        low = w.answer.lower()
+        return (
+            None
+            if any(n.lower() in low for n in needles)
+            else f"answer lacks any of {needles}: {w.answer[:100]!r}"
+        )
+
+    return check
+
+
+def check_ran_any_output(w: World) -> str | None:
+    if "run_command" not in w.tools_used:
+        return f"it did not run anything (tools: {w.tools_used})"
+    return None
+
+
+def check_made_and_ran(ext: str, *needles: str):
+    return check_all(check_program(ext, *needles), check_ran_any_output)
+
+
 TASKS = [
     Task(
         "python program",
@@ -379,6 +471,107 @@ TASKS = [
         check_honest_cannot,
     ),
 ]
+
+
+MORE_TASKS = [
+    Task("py file adds", ["create a py file that adds 2 numbers"], check_program("py", "+")),
+    Task(
+        "prime script",
+        ["write me a python script to check if a number is prime"],
+        check_program("py", "prime"),
+    ),
+    Task("calculator", ["make a calculator program in python"], check_program("py", "def ")),
+    Task(
+        "fibonacci and run",
+        ["create a python program for fibonacci series up to 10 terms and run it"],
+        check_made_and_ran("py", "fib"),
+    ),
+    Task(
+        "java adds", ["make a java program for adding two numbers"], check_program("java", "class")
+    ),
+    Task("html page", ["write a html page for my portfolio"], check_program("html", "<html")),
+    Task(
+        "js file", ["make a javascript file that prints hello"], check_program("js", "console.log")
+    ),
+    Task("ppt ai", ["generate a ppt about artificial intelligence"], check_pptx(4)),
+    Task("ppt ww2 8", ["i need a presentation on world war 2 for class, 8 slides"], check_pptx(8)),
+    Task("slides", ["make slides about healthy eating"], check_pptx(4)),
+    Task(
+        "excel columns",
+        ["create an excel with columns name, age, city and 3 sample rows"],
+        check_xlsx,
+    ),
+    Task("budget sheet", ["make a budget spreadsheet for a college student"], check_xlsx),
+    Task(
+        "cover letter",
+        ["write a cover letter for a software internship and save it as a word file"],
+        check_docx("internship"),
+    ),
+    Task(
+        "shopping txt",
+        ["make a txt file called shopping.txt with milk, eggs, bread"],
+        check_text_file("shopping", "milk", "eggs", "bread"),
+    ),
+    Task(
+        "pdf bare name",
+        ["convert report.pdf to text"],
+        check_all(
+            lambda w: (
+                None
+                if (w.home / "Downloads" / "report.txt").exists()
+                else f"no report.txt (tools: {w.tools_used})"
+            )
+        ),
+    ),
+    Task("copy bare", ["copy notes.txt to documents"], check_copied_bare),
+    Task("move bare", ["move old.txt to the downloads folder"], check_moved_to_downloads),
+    Task(
+        "two folders",
+        ["create a folder named College in documents and another folder named Work in documents"],
+        check_two_folders,
+    ),
+    Task(
+        "folder then move",
+        ["make me a folder on desktop called Hackathon and put notes.txt inside it"],
+        check_moved_into("Hackathon", "notes.txt"),
+    ),
+    Task("delete bare", ["delete the file old.txt"], check_delete),
+    Task("open folder", ["open the folder deep learning"], check_opened_file("deep_learning")),
+    Task("open pdf", ["open report.pdf"], check_opened_file("report.pdf")),
+    Task(
+        "ppt then open",
+        ["make a ppt on python programming and then open it"],
+        check_all(check_pptx(4), check_opened_file(".pptx")),
+    ),
+    Task("read a txt", ["what is in notes.txt"], check_answer("milk")),
+    Task("count files", ["show me my desktop files"], check_answer("notes.txt")),
+    Task("python version", ["check my python version"], check_ran("python")),
+    Task("run dir", ["run dir in downloads"], check_ran("report")),
+    Task(
+        "youtube search",
+        ["search python tutorials on youtube"],
+        lambda w: (
+            None
+            if any("youtube" in u and "python" in u for _, u in w.browsers.opened)
+            else "no youtube search"
+        ),
+    ),
+    Task("download dogs", ["download 3 pictures of dogs"], check_download),
+    Task(
+        "download chrome",
+        ["download chrome"],
+        lambda w: (
+            None
+            if w.files("ChromeStandaloneSetup64.exe")
+            else f"no chrome installer (tools: {w.tools_used})"
+        ),
+    ),
+    Task("greeting", ["hi"], check_no_tools()),
+    Task("capital", ["what's the capital of france"], check_no_tools("paris")),
+    Task("joke", ["tell me a joke"], check_no_tools()),
+    Task("honest: reminder", ["remind me to call mom at 6pm"], check_honest_cannot),
+]
+TASKS += MORE_TASKS
 
 
 # ---- running them ------------------------------------------------------------------------------------
@@ -466,7 +659,9 @@ async def run_task(gw: Gateway, task: Task) -> dict:
             memory_tools(svc, ingestor)
             + app_tools(world.catalog)
             + file_tools(roots, home, mode)
-            + file_op_tools(roots, home, mode, world.bin, data_dirs=[root / "vault"])
+            + file_op_tools(
+                roots, home, mode, world.bin, data_dirs=[root / "vault"], opener=world.opened.append
+            )
             + shell_tools(home)
             + web_tools(world.browsers)
             + document_tools(home / "Documents")

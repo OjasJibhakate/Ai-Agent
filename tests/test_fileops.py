@@ -67,9 +67,12 @@ def test_every_tool_declares_what_the_rules_require_and_the_risks_are_as_designe
     assert risks == {
         "make_folder": Risk.R1, "create_file": Risk.R1, "copy_path": Risk.R1,
         "extract_text": Risk.R1, "edit_file": Risk.R2, "move_path": Risk.R2, "delete_path": Risk.R3,
+        "open_path": Risk.R1,
     }  # fmt: skip
-    for tool in tools.values():
-        assert tool.sandbox == "workspace-write" and tool.timeout_s > 0 and tool.fs
+    for name, tool in tools.items():
+        # opening a file starts another program as the user, so it is declared full-access
+        assert tool.sandbox == ("full-access" if name == "open_path" else "workspace-write")
+        assert tool.timeout_s > 0 and tool.fs
         assert isinstance(tool.idempotent, bool) and tool.network == []
         assert len(tool.description.split(". ")) <= 2, tool.name
         assert tool.spec()["function"]["parameters"]["properties"]
@@ -636,3 +639,153 @@ async def test_switching_the_mode_while_chatting_changes_what_is_asked(tmp_path,
     assert asked == ["move_path"]  # asked the first time only
     assert (home / "Documents" / "a.txt").exists() and (home / "Documents" / "b.txt").exists()
     vault_.close()
+
+
+# ---- open_path and finding a file by name wherever it is -----------------------------------------
+
+
+class Opened:
+    def __init__(self):
+        self.paths: list[Path] = []
+
+    def __call__(self, path: Path) -> None:
+        self.paths.append(path)
+
+
+def tools_with_opener(world, opener):
+    home, vault = world
+    roots = [home / "Desktop", home / "Documents", home / "Downloads"]
+    tools = file_op_tools(roots, home, None, Bin(), data_dirs=[vault], opener=opener)
+    return {t.name: t for t in tools}
+
+
+async def test_open_a_file_or_a_folder_the_way_a_double_click_does(world):
+    home, _ = world
+    (home / "Documents" / "talk.pptx").write_bytes(b"deck")
+    opener = Opened()
+    tools = tools_with_opener(world, opener)
+    out = await use(tools, "open_path", path="Documents/talk.pptx")
+    await use(tools, "open_path", path="Downloads")
+    assert out == "Opened talk.pptx" or getattr(out, "text", out) == "Opened talk.pptx"
+    assert opener.paths == [home / "Documents" / "talk.pptx", home / "Downloads"]
+
+
+async def test_a_file_is_found_by_name_even_inside_a_subfolder(world):
+    home, _ = world
+    deep = home / "Documents" / "Ragnarok"
+    deep.mkdir(parents=True)
+    (deep / "Climate change.pptx").write_bytes(b"deck")
+    opener = Opened()
+    await use(tools_with_opener(world, opener), "open_path", path="Climate change.pptx")
+    assert opener.paths == [deep / "Climate change.pptx"]
+
+
+async def test_two_files_with_the_same_name_are_listed_not_guessed(world):
+    home, _ = world
+    for folder in ("Desktop", "Documents"):  # the same name at the top of two folders
+        (home / folder / "plan.docx").write_bytes(b"x")
+    opener = Opened()
+    out = await use(tools_with_opener(world, opener), "open_path", path="plan.docx")
+    assert out.startswith("error:") and "more than one place" in out and opener.paths == []
+
+
+async def test_a_file_at_the_top_of_a_folder_wins_over_one_buried_deeper(world):
+    home, _ = world
+    (home / "Documents" / "Old").mkdir()
+    (home / "Documents" / "Old" / "plan.docx").write_bytes(b"old")
+    (home / "Desktop" / "plan.docx").write_bytes(b"new")
+    opener = Opened()
+    await use(tools_with_opener(world, opener), "open_path", path="plan.docx")
+    assert opener.paths == [home / "Desktop" / "plan.docx"]
+
+
+@pytest.mark.parametrize(
+    "name", ["setup.exe", "run.bat", "x.ps1", "m.msi", "s.vbs", "a.lnk", "j.jar", "r.reg"]
+)
+async def test_programs_and_scripts_are_never_opened(world, name):
+    home, _ = world
+    (home / "Downloads" / name).write_bytes(b"x")
+    opener = Opened()
+    out = await use(tools_with_opener(world, opener), "open_path", path=f"Downloads/{name}")
+    assert out.startswith("error:") and "never start" in out and opener.paths == []
+
+
+async def test_open_respects_the_guard(world):
+    home, vault = world
+    opener = Opened()
+    tools = tools_with_opener(world, opener)
+    for bad in (str(vault), ".ssh", "C:/Windows/notepad.exe", "Desktop/missing.pdf"):
+        assert (await use(tools, "open_path", path=bad)).startswith("error:"), bad
+    assert opener.paths == []
+
+
+async def test_a_stand_in_user_name_and_a_bare_name_both_work_for_every_source_tool(world):
+    home, _ = world
+    (home / "Downloads" / "r.pdf").write_bytes(make_pdf(PDF_PAGES))
+    tools = tools_for(world)
+    await use(tools, "extract_text", source=r"C:\Users\name\Downloads\r.pdf")
+    assert (home / "Downloads" / "r.txt").exists()
+    await use(tools, "extract_text", source="r.pdf", destination="Desktop/again.txt")
+    assert (home / "Desktop" / "again.txt").exists()
+    (home / "Desktop" / "old.txt").write_text("x")
+    bin_ = Bin()
+    await use(tools_for(world, recycler=bin_), "delete_path", path="old.txt")
+    assert bin_.sent == [home / "Desktop" / "old.txt"]
+
+
+async def test_rename_in_place_and_copy_into_a_folder_by_bare_names(world):
+    home, _ = world
+    (home / "Desktop" / "notes.txt").write_text("x")
+    await use(tools_for(world), "move_path", source="notes.txt", destination="ideas.txt")
+    assert (home / "Desktop" / "ideas.txt").exists() and not (
+        home / "Desktop" / "notes.txt"
+    ).exists()
+    (home / "Documents" / "Reports").mkdir()
+    await use(tools_for(world), "copy_path", source="ideas.txt", destination="Reports")
+    assert (home / "Documents" / "Reports" / "ideas.txt").exists()
+
+
+async def test_a_new_file_or_folder_with_a_bare_name_lands_in_documents_ragnarok(world):
+    home, _ = world
+    await use(tools_for(world), "create_file", path="addition.py", content="print(1+2)")
+    await use(tools_for(world), "make_folder", path="Projects")
+    assert (home / "Documents" / "Ragnarok" / "addition.py").exists()
+    assert (home / "Documents" / "Ragnarok" / "Projects").is_dir()
+    assert not (home / "addition.py").exists()  # not left loose in the profile folder
+
+
+# ---- names said loosely: "deep learning" finds Deep_learning --------------------------
+
+
+async def test_a_folder_is_opened_by_what_the_user_says_not_its_exact_spelling(world):
+    home, _ = world
+    (home / "Desktop" / "Deep_learning").mkdir()
+    (home / "Desktop" / "Deep_learning" / "Deep Learning.pdf").write_bytes(
+        b"x"
+    )  # deeper, same words
+    opener = Opened()
+    await use(tools_with_opener(world, opener), "open_path", path="deep learning")
+    assert opener.paths == [home / "Desktop" / "Deep_learning"]  # the folder, not the file in it
+
+
+async def test_a_deck_is_found_from_a_few_words_of_its_name(world):
+    home, _ = world
+    (home / "Documents" / "Ragnarok").mkdir()
+    (home / "Documents" / "Ragnarok" / "Climate change.pptx").write_bytes(b"deck")
+    opener = Opened()
+    await use(tools_with_opener(world, opener), "open_path", path="climate ppt")
+    assert opener.paths == [home / "Documents" / "Ragnarok" / "Climate change.pptx"]
+
+
+async def test_loose_names_that_fit_several_things_are_listed_not_guessed(world):
+    home, _ = world
+    (home / "Documents" / "Q1 sales report.docx").write_bytes(b"1")
+    (home / "Desktop" / "Q2 sales report.docx").write_bytes(b"2")
+    opener = Opened()
+    out = await use(tools_with_opener(world, opener), "open_path", path="sales report")
+    assert out.startswith("error:") and "several things" in out and opener.paths == []
+
+
+async def test_a_name_that_matches_nothing_is_just_not_found(world):
+    out = await use(tools_with_opener(world, Opened()), "open_path", path="no such thing")
+    assert out.startswith("error:")

@@ -45,6 +45,7 @@ from ragnarok.policy.permissions import Risk
 from ragnarok.runtime.tools import CURRENT_TEXT, PROGRESS, Tool, ToolArgs, ToolResult
 from ragnarok.skills.folders import downloads_folder
 from ragnarok.skills.images import USER_AGENT
+from ragnarok.skills.steps import reply as end_turn
 
 MAX_BYTES = 2 * 1024**3
 MAX_REDIRECTS = 5
@@ -325,7 +326,7 @@ def download_tools(
             raise DownloadError("there is not enough free disk space for that file")
         target, already = await asyncio.to_thread(unique_path, folder, name, size)
         if already:
-            return ToolResult(f"Already downloaded: {target.name} is in {folder}.", final=True)
+            return end_turn(f"Already downloaded: {target.name} is in {folder}.")
 
         part = target.with_name(target.name + ".part")
         digest = hashlib.sha256()
@@ -352,7 +353,7 @@ def download_tools(
         text = f"Saved {target.name} ({_megabytes(got)}) to {folder}."
         if is_program(target.name):
             text += " It is a program: I have not run it, and Windows will check it before you do."
-        return ToolResult(text + f"\nSHA-256 {digest.hexdigest()}", final=True)
+        return end_turn(text + f"\nSHA-256 {digest.hexdigest()}")
 
     async def download_file(args: DownloadFileArgs) -> str | ToolResult:
         try:

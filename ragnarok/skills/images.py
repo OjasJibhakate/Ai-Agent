@@ -31,6 +31,7 @@ from pydantic import Field
 from ragnarok.policy.permissions import Risk
 from ragnarok.runtime.tools import CURRENT_TEXT, PROGRESS, Tool, ToolArgs, ToolResult
 from ragnarok.skills.folders import downloads_folder
+from ragnarok.skills.steps import reply
 
 API = "https://commons.wikimedia.org/w/api.php"
 HOSTS = frozenset({"commons.wikimedia.org", "upload.wikimedia.org", "thumb.wikimedia.org"})
@@ -301,7 +302,7 @@ def image_tools(
 
         total = len(saved) + len(had)
         if total == 0:
-            return ToolResult(f"I found no pictures of {query!r} I could download.", final=True)
+            return reply(f"I found no pictures of {query!r} I could download.")
         parts = [
             f"Saved {len(saved)} picture{'s' if len(saved) != 1 else ''} of {query!r} to {folder}"
         ]
@@ -314,7 +315,7 @@ def image_tools(
             text += f" (I download at most {MAX_COUNT} at a time.)"
         if total < wanted:
             text += f" That is all I found ({total} of {wanted})."
-        return ToolResult(text, final=True)
+        return reply(text)
 
     return [
         Tool(
