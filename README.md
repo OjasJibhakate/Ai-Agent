@@ -11,7 +11,7 @@ Project rules for contributors and coding agents: [`AGENTS.md`](AGENTS.md).
 
 Target machine: HP OMEN 16, i5-13420H, 16 GB RAM, RTX 4050 6 GB, Windows 11, no WSL or Docker.
 
-*Last updated: 2026-10-25 19:55 IST (UTC+05:30).*
+*Last updated: 2026-10-25 19:50 IST (UTC+05:30).*
 
 ---
 
@@ -66,7 +66,7 @@ Times are commit times (IST). Details and numbers for each line are in the work 
 | 2026-10-25 18:50 | Read-only file skill: find, list and read files in Desktop, Documents and Downloads (OneDrive copies included); secrets and anything outside those folders refused | `29492da` |
 | 2026-10-25 18:53 | `persistent_memory.py`: the whole memory lifecycle in one file, plus correct, revert, pin, export and stats | `3306cfb` |
 | 2026-10-25 19:39 | **M5** Weekly summaries (validated model output), forgetting by usefulness, delete cascade, undo, daily maintenance | `1eda367` |
-| 2026-10-25 19:55 | CLI controls for all of it (`memory pin\|correct\|revert\|export\|stats\|consolidate\|prune\|maintain\|undo-summary`) and idle-time maintenance in the chat | latest commit |
+| 2026-10-25 19:45 | CLI controls for all of it (`memory pin\|correct\|revert\|export\|stats\|consolidate\|prune\|maintain\|undo-summary`) and idle-time maintenance in the chat | `27fedd9` |
 
 283 tests pass and `ruff` is clean as of the last commit.
 
