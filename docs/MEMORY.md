@@ -270,6 +270,23 @@ Retention and deletion behaviour is shown in the UI, not hidden.
 | Rebuild | time to rebuild from SQLite BLOBs | < 1 s at 10k |
 | Persistence | does `save()` write plaintext? | if yes, keep the index RAM-only (default) or encrypt the bytes |
 
+### 8.1 M0 results (2026-10-25, `turbovec` 1.1.2, Windows, Python 3.12)
+
+| Check | Status | Evidence |
+|---|---|---|
+| API fit | ✅ pass | `IdMapIndex` has `add_with_ids` (uint64 ids), `remove(id)`, `contains(id)`, `search(..., allowlist=...)`. Covered by `tests/test_m0_turbovec_api.py` (all pass). |
+| Persistence | ✅ resolved, with a better option | `to_bytes()` / `from_bytes()` serialize the whole index without touching the filesystem. We can store that blob **inside the encrypted vault** instead of a plaintext `.tvim`, so startup doesn't need a full rebuild. The embeddings table stays the ground truth and the rebuild path stays as the recovery path. |
+| Implementation | ⚠️ partly verified | The package README and compiled binary describe: normalise + store length, one shared random rotation, Lloyd-Max scalar quantization (2 or 4 bits), a per-vector scalar that removes inner-product bias, and an optional `calibrate(sample)` ("TQ+"). **No QJL residual stage is mentioned** in either place. We have not read the Rust source, so the claim stays "TurboQuant-based, no QJL found", never "full paper". |
+| Size | ✅ measured | Fixed overhead ≈ 0.86 MB (4-bit) / 0.45 MB (2-bit), then ≈ 396 / 204 bytes per vector (ideal 384 / 192). At 20,000 vectors: 7.0× smaller than float32 at 4-bit, 13.6× at 2-bit. At 10k memories the 4-bit index is about 4.8 MB. |
+| Constraints | ✅ fine for us | dimension must be a multiple of 8 (768 works); bit widths 2 or 4; brute-force scan (no graph), which is fine at this scale. |
+| Calibration | ⚠️ to-do | `calibrate()` needs ~1,024 representative vectors and should run **before** bulk adds; a bad sample hurts recall. Decide in M2 after measuring recall on real embeddings. |
+| Quality (recall@10 vs exact) | ⏳ pending | Needs real embeddings, so it waits for `nomic-embed-text` (M2 benchmark). Random vectors would not be representative. |
+| Speed | ⏳ pending | Same: measured in the M2/M6 benchmark. |
+
+SQLCipher check (same day): SQLCipher 4.19.0 on SQLite 3.53.4, FTS5 compiled in, exact-identifier search works, the file header
+is not `SQLite format 3`, demo strings don't appear in the raw bytes, and opening without or with the wrong key fails.
+Covered by `tests/test_m0_sqlcipher.py`.
+
 **Fallback:** if Turbovec fails a check, switch to exact numpy cosine search (same interface; 10k × 768 float32 ≈ 31 MB) or `sqlite-vec`.
 The rest of the system is unaffected because the index sits behind one small interface:
 
