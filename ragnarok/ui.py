@@ -29,12 +29,13 @@ ASCII_FRAMES = "|/-\\"
 
 UNICODE = {
     "prompt": ">", "bot": "●", "tool": "⎿", "ok": "✓", "no": "✗", "live": "●", "spark": "✦",
-    "dot": "·", "tl": "╭", "tr": "╮", "bl": "╰", "br": "╯",
+    "idle": "○", "retry": "↻", "wait": "◐", "dot": "·", "tl": "╭", "tr": "╮", "bl": "╰", "br": "╯",
     "h": "─", "v": "│", "ellipsis": "…",
 }  # fmt: skip
 PLAIN = {
     "prompt": ">", "bot": "*", "tool": "|_", "ok": "+", "no": "x", "live": "*", "spark": "*",
-    "dot": "-", "tl": "+", "tr": "+", "bl": "+", "br": "+", "h": "-", "v": "|", "ellipsis": "...",
+    "idle": "o", "retry": "~", "wait": "?", "dot": "-", "tl": "+", "tr": "+", "bl": "+", "br": "+",
+    "h": "-", "v": "|", "ellipsis": "...",
 }  # fmt: skip
 
 # 256-colour codes
@@ -460,6 +461,8 @@ class Console:
             ("/memories", "what I remember about you"),
             ("/profile", "what is always in my prompt"),
             ("/forget N", "delete memory N for good"),
+            ("/plan GOAL", "show a step-by-step plan first, then run it"),
+            ("/resume", "carry on with a plan that did not finish"),
             ("/inbox", "reminders and results that arrived while you were away"),
             ("/reminders", "what I will remind you of or watch for"),
             ("/cancel N", "stop reminder, schedule or watch N"),
@@ -487,6 +490,52 @@ class Console:
             self.write(f"   {self.amber(f'm{m.id:<3}')} {tag} {text}")
         self.write(f"   {self.faint(str(len(memories)) + ' shown')}")
         self.write()
+
+    # ---- plans -----------------------------------------------------------------------------
+
+    def plan_card(self, goal: str, rows: list[tuple[str, str, list[str], str, bool]]) -> str:
+        """The plan before it runs: each step, what it waits for, and whether it will ask.
+
+        `rows` are (id, title, after, highest risk, will ask). Returns the prompt for the question
+        on its last line.
+        """
+        g = self.g
+        side = f"   {self.violet(g['v'])} "
+        self.write()
+        self.write(
+            f"   {self.violet(g['tl'] + g['h'])} {self.bold('Plan')} {self.dim(g['dot'])} "
+            f"{len(rows)} steps"
+        )
+        goal_line = goal if len(goal) <= self.width - 8 else goal[: self.width - 9] + g["ellipsis"]
+        self.write(side + self.faint(goal_line))
+        for step_id, title, after, _risk, asks in rows:
+            tags = []
+            if after:
+                tags.append(self.dim(f"after {','.join(after)}"))
+            if asks:
+                tags.append(self.amber("asks you"))
+            tail = "  ".join(tags)
+            room = self.width - 14 - visible_len(tail)
+            shown = title if len(title) <= room else title[: room - 1] + g["ellipsis"]
+            gap = " " * max(2, room - len(shown) + 2)
+            self.write(f"{side}{self.dim(g['idle'])} {self.sky(f'{step_id:<3}')}{shown}{gap}{tail}")
+        return f"   {self.violet(g['bl'] + g['h'])} Run this plan? {self.dim('[y/N]')} "
+
+    def step_line(self, state: str, step_id: str, title: str, note: str = "") -> None:
+        """One line as a step changes state."""
+        g = self.g
+        glyph, paint = {
+            "running": (g["live"], self.sky), "done": (g["ok"], self.good),
+            "failed": (g["no"], self.bad), "blocked": (g["dot"], self.dim),
+            "retry": (g["retry"], self.amber), "waiting_approval": (g["wait"], self.amber),
+            "replan": (g["spark"], self.violet),
+        }.get(state, (g["idle"], self.dim))  # fmt: skip
+        room = self.width - 16
+        head = f"{step_id:<3}{title}" if title else f"{step_id:<3}"
+        if len(head) > room:
+            head = head[: room - 1] + g["ellipsis"]
+        tail = f"  {self.faint(note[: self.width - 10 - len(head)])}" if note else ""
+        self.write(f"   {paint(glyph)} {head}{tail}")
 
     # ---- things that arrive by themselves --------------------------------------------------
 

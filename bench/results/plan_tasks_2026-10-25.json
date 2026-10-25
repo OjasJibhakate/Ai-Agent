@@ -1,0 +1,157 @@
+[
+  {
+    "goal": "deck and note",
+    "plan_seconds": 4.0,
+    "plan": [
+      [
+        "s1",
+        "Create a PowerPoint presentation summarizing the image processing folder on the desktop",
+        [
+          "summarize_files"
+        ],
+        [],
+        "file:*.pptx"
+      ],
+      [
+        "s2",
+        "Create a text file listing the file names from the image processing folder on the desktop",
+        [
+          "create_file"
+        ],
+        [],
+        "tool_ok"
+      ]
+    ],
+    "status": "done",
+    "done": [
+      "s1",
+      "s2",
+      "s3"
+    ],
+    "failed": {},
+    "blocked": [],
+    "ok": true,
+    "why": null,
+    "seconds": 34.2,
+    "events": [
+      "  state    s1  running          ",
+      "  retry    s1  running          fix: no file matching *.pptx was made (it used list_folder)",
+      "  state    s1  running          attempt 2",
+      "  retry    s1  running          fix: no file matching *.pptx was made (it used list_folder)",
+      "  state    s1  running          attempt 3",
+      "  state    s1  failed           no file matching *.pptx was made",
+      "  replan   s1                   3 new steps",
+      "  state    s1  running          ",
+      "  state    s1  done             Desktop\\image processing has 6 items:\nconvolution notes.txt  (840 B)\nh",
+      "  state    s2  running          ",
+      "  state    s2  done             Created a 6-slide presentation summarizing the image processing folder",
+      "  state    s3  running          ",
+      "  state    s3  done             I've created a text note at Desktop/image_processing_files.txt listing",
+      "  finished -                    done"
+    ]
+  },
+  {
+    "goal": "folder, copy, note",
+    "plan_seconds": 4.9,
+    "plan": [
+      [
+        "s1",
+        "Create Reports folder on Desktop",
+        [
+          "make_folder"
+        ],
+        [],
+        "tool_ok"
+      ],
+      [
+        "s2",
+        "Copy report.pdf from Downloads to Reports folder",
+        [
+          "copy_path"
+        ],
+        [
+          "s1"
+        ],
+        "tool_ok"
+      ],
+      [
+        "s3",
+        "Summarize contents of Reports folder into a note",
+        [
+          "summarize_files"
+        ],
+        [
+          "s2"
+        ],
+        "file:*.txt"
+      ]
+    ],
+    "status": "done",
+    "done": [
+      "s1",
+      "s2",
+      "s3"
+    ],
+    "failed": {},
+    "blocked": [],
+    "ok": true,
+    "why": null,
+    "seconds": 22.2,
+    "events": [
+      "  state    s1  running          ",
+      "  state    s1  done             I've created the Reports folder on your Desktop.",
+      "  state    s2  running          ",
+      "  state    s2  done             I've copied report.pdf from Downloads to the Reports folder on your De",
+      "  state    s3  running          ",
+      "  retry    s3  running          fix: no file matching *.txt was made (it used summarize_files)",
+      "  state    s3  running          attempt 2",
+      "  state    s3  done             I've summarized the Reports folder into a note called Summary of Repor",
+      "  finished -                    done"
+    ]
+  },
+  {
+    "goal": "deck with a flaky tool",
+    "plan_seconds": 3.9,
+    "plan": [
+      [
+        "s1",
+        "Create a PowerPoint presentation summarizing the Desktop image processing folder",
+        [
+          "summarize_files"
+        ],
+        [],
+        "file:*.pptx"
+      ],
+      [
+        "s2",
+        "List the files in the Desktop image processing folder and save them to a text note",
+        [
+          "find_files"
+        ],
+        [],
+        "tool_ok"
+      ]
+    ],
+    "status": "done",
+    "done": [
+      "s1",
+      "s2"
+    ],
+    "failed": {},
+    "blocked": [],
+    "ok": true,
+    "why": null,
+    "seconds": 31.6,
+    "events": [
+      "  state    s1  running          ",
+      "  retry    s1  running          retry: summarize_files failed: error: timeout (it used summarize_files",
+      "  state    s1  running          attempt 2",
+      "  state    s1  done             Saved: Created 6 slide PowerPoint presentation summarizing Desktop/ima",
+      "  state    s2  running          ",
+      "  retry    s2  running          fix: this step is to make or change something, but only read tools ran",
+      "  state    s2  running          attempt 2",
+      "  state    s2  done             I found 2 files in the Desktop image processing folder and saved their",
+      "  finished -                    done"
+    ]
+  }
+]

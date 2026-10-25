@@ -42,4 +42,5 @@ exclude = ["*.md"]
 "tests/test_m4_ui.py" = ["RUF001"]  # ...and so does its test
 "tests/test_chat_flow.py" = ["RUF001"]  # the footer's multiplication sign
 "tests/test_pdfwriter.py" = ["RUF001"]  # typographic characters are the point of one test
+"tests/test_planning.py" = ["E501", "RUF015"]  # compact scripted plans
 "tests/*" = ["RUF059"]  # unused names from tuple-returning test setup helpers

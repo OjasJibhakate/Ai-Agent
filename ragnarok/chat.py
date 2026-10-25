@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import time
 from collections.abc import Awaitable, Callable
 from typing import Protocol
 
@@ -21,8 +22,13 @@ import httpx
 from ragnarok.memory.ingest import Ingestor
 from ragnarok.memory.service import MemoryService
 from ragnarok.memory.store import MemoryStore
+from ragnarok.planning.intent import looks_multi_step
+from ragnarok.planning.models import Plan, PlanError
+from ragnarok.planning.runner import PlanEvent, PlanRunner, default_file_probe
+from ragnarok.planning.store import PlanStore
 from ragnarok.policy.modes import MODES, SUMMARY, Mode
 from ragnarok.policy.permissions import Decision
+from ragnarok.policy.permissions import check as check_permission
 from ragnarok.runtime.gateway import CHAT_MODEL, OLLAMA_URL, Gateway
 from ragnarok.runtime.loop import Agent, Session
 from ragnarok.runtime.tools import PROGRESS, Tool, memory_tools
@@ -31,7 +37,7 @@ from ragnarok.skills.digest import digest_tools
 from ragnarok.skills.documents import document_tools
 from ragnarok.skills.downloads import download_tools
 from ragnarok.skills.fileops import file_op_tools
-from ragnarok.skills.files import file_tools
+from ragnarok.skills.files import default_roots, file_tools
 from ragnarok.skills.images import image_tools
 from ragnarok.skills.screen.tools import screen_tools
 from ragnarok.skills.shell import shell_tools
@@ -126,6 +132,9 @@ class ChatApp:
         self.approve_line = approve_line
         self._catalog = WindowsApps() if tools is None else None
         self.triggers = TriggerStore(rt.store.vault)
+        self.plans = PlanStore(rt.store.vault)
+        self._plan_id: str | None = None
+        self._plan_titles: dict[str, str] = {}
         if tools is None:
             tools = (
                 memory_tools(rt.svc, rt.ingestor)
@@ -258,6 +267,123 @@ class ChatApp:
         self.c.write("   " + self.c.dim(self.c.g["tool"]) + "  " + self.c.faint(text))
         self._resume_spinner()
 
+    # ---- plans (FR3) --------------------------------------------------------------------------
+
+    def _plan_runner(self) -> PlanRunner:
+        def make_agent(subset: list[Tool], ask) -> Agent:
+            return Agent(
+                self.rt.store, self.rt.svc, self.rt.ingestor, self.rt.gateway,
+                profile=self.mode.profile, approve=ask, tools=subset,
+            )  # fmt: skip
+
+        return PlanRunner(
+            self.plans,
+            self.rt.gateway,
+            self.agent.tools,
+            make_agent,
+            self._approve,
+            self._plan_event,
+            file_probe=default_file_probe(default_roots()),
+        )
+
+    async def _plan_event(self, event: PlanEvent) -> None:
+        """Show a step changing state. The spinner is stopped for the line and restarted if
+        the next thing is more work."""
+        await self._between()
+        if self._spinner is not None:
+            self._spinner.active = False
+            self._spinner = None
+        sid = event.step_id or ""
+        if event.kind == "replan" and self._plan_id:
+            row = await asyncio.to_thread(self.plans.get, self._plan_id)
+            if row is not None:
+                self._plan_titles = {s.id: s.title for s in row.plan.steps}
+            self.c.step_line("replan", "", "changing the plan", event.text)
+            return
+        if event.kind == "finished":
+            return
+        title = self._plan_titles.get(sid, "")
+        state = "retry" if event.kind == "retry" else event.state
+        self.c.step_line(state, sid, title, event.text)
+        if state == "running":
+            self._spinner = self.c.spinner(f"Working on {sid}")
+            self._spinner.start()
+
+    async def _plan_mode(self, goal: str, *, fallback: bool) -> bool:
+        """Plan a goal, show the plan, and run it if the owner says yes. Returns True when this
+        handled the request; False means the caller should answer it the ordinary way."""
+        await self.learner.cancel()
+        runner = self._plan_runner()
+        self._spinner = self.c.spinner("Planning")
+        self._spinner.start()
+        try:
+            plan, risks = await runner.propose(goal)
+        except PlanError as exc:
+            await self._between()
+            self._spinner = None
+            if fallback:
+                self.c.notice("(I couldn't make a plan for that, so I'll just do it directly.)")
+                return False
+            self.c.error(str(exc))
+            return True
+        await self._between()
+        self._spinner = None
+        rows = []
+        for step in plan.steps:
+            asks = any(
+                (t := self.agent.tools.get(n)) is not None
+                and check_permission(self.mode.profile, n, t.risk).ask
+                for n in step.uses
+            )
+            rows.append((step.id, step.title, step.after, risks[step.id].value, asks))
+        prompt = self.c.plan_card(goal, rows)
+        answer = await asyncio.to_thread(self.approve_line or input, prompt)
+        if answer.strip().lower() not in ("y", "yes"):
+            self.c.notice("Okay, I won't run it." if not fallback else "Okay, doing it directly.")
+            return not fallback
+        self._plan_titles = {s.id: s.title for s in plan.steps}
+        self._plan_id = await asyncio.to_thread(self.plans.create, plan, self.session.id)
+        self.c.write()
+        await self._execute_plan(runner, goal, self._plan_id)
+        return True
+
+    async def _execute_plan(self, runner: PlanRunner, goal: str, plan_id: str) -> None:
+        started = time.perf_counter()
+        try:
+            result = await runner.run(plan_id)
+        finally:
+            await self._between()
+            self._spinner = None
+        row = await asyncio.to_thread(self.plans.get, plan_id)
+        summary = result.summary(row.plan if row else Plan(goal, []))
+        first, _, rest = summary.partition("\n")
+        marker = self.c.assistant_marker("done" if result.status == "done" else "warn")
+        self.c.write()
+        self.c.write(marker + first)
+        for line in rest.splitlines():
+            self.c.write("   " + line)
+        self.c.write()
+        self.c.footer([], time.perf_counter() - started)
+        self.c.write()
+        self.session.history += [
+            {"role": "user", "content": goal},
+            {"role": "assistant", "content": summary},
+        ]
+        self.learner.schedule()
+
+    async def _resume_command(self) -> None:
+        unfinished = await asyncio.to_thread(self.plans.unfinished)
+        if not unfinished:
+            self.c.notice("There is no unfinished plan.")
+            return
+        row = unfinished[-1]
+        self._plan_id = row.id
+        self._plan_titles = {s.id: s.title for s in row.plan.steps}
+        steps = await asyncio.to_thread(self.plans.steps, row.id)
+        left = [s for s in row.plan.steps if steps[s.id].state != "done"]
+        self.c.notice(f"Carrying on with: {row.goal[:70]} ({len(left)} steps left)")
+        await self._execute_plan(self._plan_runner(), row.goal, row.id)
+
     # ---- the session -------------------------------------------------------------------------
 
     async def run(self) -> None:
@@ -271,6 +397,11 @@ class ChatApp:
         unread = await asyncio.to_thread(self.triggers.unread_count)
         if unread:
             self.c.notice(f"{unread} new in your Inbox. Type /inbox to read.")
+        unfinished = await asyncio.to_thread(self.plans.unfinished)
+        if unfinished:
+            self.c.notice(
+                f"A plan did not finish: {unfinished[-1].goal[:60]}. Type /resume to go on."
+            )
         self.engine.start()
 
         try:
@@ -289,6 +420,8 @@ class ChatApp:
                 if line.startswith("/"):
                     if await self._slash(line):
                         break
+                    continue
+                if looks_multi_step(line) and await self._plan_mode(line, fallback=True):
                     continue
                 await self._turn(line)
         finally:
@@ -374,6 +507,13 @@ class ChatApp:
                 self.c.success(f"Forgot m{int(arg)}.")
             else:
                 self.c.error("No such memory.")
+        elif cmd == "/plan":
+            if arg.strip():
+                await self._plan_mode(arg.strip(), fallback=False)
+            else:
+                self.c.notice("Say what you want done: /plan find my notes, make slides, save them")
+        elif cmd == "/resume":
+            await self._resume_command()
         elif cmd == "/inbox":
             items = await asyncio.to_thread(self.triggers.inbox)
             self.c.inbox(items)
