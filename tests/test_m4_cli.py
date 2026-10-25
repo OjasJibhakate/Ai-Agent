@@ -93,11 +93,20 @@ def test_refuses_a_data_folder_inside_onedrive(tmp_path, monkeypatch, capsys):
     assert "OneDrive" in capsys.readouterr().err
 
 
-def test_wrong_passphrase_is_a_clean_error(home, monkeypatch, capsys):
+def test_wrong_passphrase_is_a_clean_error_after_three_tries(home, monkeypatch, capsys):
     init_vault(monkeypatch, capsys)
-    passphrases(monkeypatch, "not the passphrase")
+    passphrases(monkeypatch, "nope one", "nope two", "nope three")
     assert cli.main(["memory", "list"]) == 2
-    assert "wrong passphrase" in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert "2 tries left" in captured.out and "1 tries left" in captured.out
+    assert "wrong passphrase" in captured.err
+
+
+def test_a_typo_is_forgiven(home, monkeypatch, capsys):
+    init_vault(monkeypatch, capsys)
+    monkeypatch.setattr(cli, "Gateway", FakeGateway)
+    passphrases(monkeypatch, "typo typo typo", PASSPHRASE)
+    assert cli.main(["memory", "list"]) == 0
 
 
 def test_recovery_code_unlocks(home, monkeypatch, capsys):

@@ -31,9 +31,12 @@ from ragnarok.memory.vault import Vault, VaultKeyError
 from ragnarok.policy.permissions import Decision
 from ragnarok.runtime.gateway import CHAT_MODEL, EMBED_MODEL, OLLAMA_URL, Gateway
 from ragnarok.runtime.loop import Agent, Session
+from ragnarok.runtime.tools import memory_tools
+from ragnarok.skills.apps import app_tools
 from ragnarok.vault import keys
 
 KEY_FILE, DPAPI_FILE, VAULT_FILE = "key.json", "key.dpapi", "vault.db"
+MAX_UNLOCK_TRIES = 3
 
 
 class CliError(Exception):
@@ -75,12 +78,17 @@ def unlock(home: Path, *, use_recovery: bool = False) -> bytes:
             return keys.unlock_with_dpapi(home / DPAPI_FILE)
         except keys.KeystoreError:
             print("DPAPI unlock failed; asking for the passphrase.", file=sys.stderr)
-    try:
-        if use_recovery:
-            return keys.unlock_with_recovery(keystore, getpass.getpass("Recovery code: "))
-        return keys.unlock_with_passphrase(keystore, getpass.getpass("Passphrase: "))
-    except keys.WrongSecret as exc:
-        raise CliError("wrong passphrase or recovery code.") from exc
+    for attempt in range(MAX_UNLOCK_TRIES):
+        try:
+            if use_recovery:
+                return keys.unlock_with_recovery(keystore, getpass.getpass("Recovery code: "))
+            return keys.unlock_with_passphrase(keystore, getpass.getpass("Passphrase: "))
+        except keys.WrongSecret:
+            left = MAX_UNLOCK_TRIES - attempt - 1
+            if left:
+                what = "recovery code" if use_recovery else "passphrase"
+                print(f"Wrong {what}. {left} tries left.")
+    raise CliError("wrong passphrase or recovery code.")
 
 
 def open_runtime(
@@ -129,7 +137,8 @@ async def _approve(name: str, args: dict, decision: Decision) -> bool:
 
 
 async def _chat(rt: Runtime) -> None:
-    agent = Agent(rt.store, rt.svc, rt.ingestor, rt.gateway, approve=_approve)
+    tools = memory_tools(rt.svc, rt.ingestor) + app_tools()
+    agent = Agent(rt.store, rt.svc, rt.ingestor, rt.gateway, approve=_approve, tools=tools)
     session = Session()
     print("Loading models...", end=" ", flush=True)
     print(f"ready in {await rt.gateway.warm_up():.1f}s. Type /help for commands.\n")
