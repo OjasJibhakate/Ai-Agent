@@ -29,6 +29,7 @@ from ragnarok.planning.store import PlanStore
 from ragnarok.policy.modes import MODES, SUMMARY, Mode
 from ragnarok.policy.permissions import Decision
 from ragnarok.policy.permissions import check as check_permission
+from ragnarok.recovery.breaker import CircuitBreaker
 from ragnarok.runtime.gateway import CHAT_MODEL, OLLAMA_URL, Gateway
 from ragnarok.runtime.loop import Agent, Session
 from ragnarok.runtime.tools import PROGRESS, Tool, memory_tools
@@ -132,6 +133,7 @@ class ChatApp:
         self.approve_line = approve_line
         self._catalog = WindowsApps() if tools is None else None
         self.triggers = TriggerStore(rt.store.vault)
+        self.breaker = CircuitBreaker()  # shared: a tool paused for one agent is paused for all
         self.plans = PlanStore(rt.store.vault)
         self._plan_id: str | None = None
         self._plan_titles: dict[str, str] = {}
@@ -163,6 +165,7 @@ class ChatApp:
             approve=self._approve,
             tools=tools,
             on_tool=self._tool_started,
+            breaker=self.breaker,
         )
         self.session = Session()
         self.learner = BackgroundLearner(
@@ -243,6 +246,7 @@ class ChatApp:
             profile="background",
             approve=self._headless_approve,
             tools=list(self.agent.tools.values()),
+            breaker=self.breaker,
         )
         self._proposals = []
         result = await helper.turn(Session(), goal)
@@ -273,7 +277,7 @@ class ChatApp:
         def make_agent(subset: list[Tool], ask) -> Agent:
             return Agent(
                 self.rt.store, self.rt.svc, self.rt.ingestor, self.rt.gateway,
-                profile=self.mode.profile, approve=ask, tools=subset,
+                profile=self.mode.profile, approve=ask, tools=subset, breaker=self.breaker,
             )  # fmt: skip
 
         return PlanRunner(

@@ -24,6 +24,7 @@ from ragnarok.memory.profile import ProfileCache
 from ragnarok.memory.service import MemoryService
 from ragnarok.memory.store import MemoryStore
 from ragnarok.policy import permissions
+from ragnarok.recovery.breaker import CircuitBreaker
 from ragnarok.runtime.context import build_messages
 from ragnarok.runtime.gateway import ChatResult, GatewayError
 from ragnarok.runtime.tools import (
@@ -96,6 +97,7 @@ class Agent:
         tools: list[Tool] | None = None,
         fast_finish: bool = True,
         on_tool: Callable[[str], Awaitable[None]] | None = None,
+        breaker: CircuitBreaker | None = None,
     ) -> None:
         self.store = store
         self.svc = svc
@@ -107,6 +109,7 @@ class Agent:
         self.current: TurnResult | None = None  # the turn in progress, for screens to inspect
         self.fast_finish = fast_finish  # end the turn on a tool's final answer (no 2nd model call)
         self.on_tool = on_tool  # told when an allowed tool is about to run (the screen shows it)
+        self.breaker = breaker or CircuitBreaker()  # a tool that keeps crashing is paused
 
     async def turn(
         self,
@@ -215,6 +218,15 @@ class Agent:
             result.trace.append(ToolTrace(name, clean, decision.rule, False, "denied"))
             return f"error: denied by rule {decision.rule}", False
 
+        wait = self.breaker.blocked_for(name)
+        if wait:  # it keeps crashing: fail at once instead of waiting on it again
+            unavailable = (
+                f"error: unavailable: {name} failed {self.breaker.threshold} times in a row; "
+                f"it will be tried again in about {int(wait) + 1} s"
+            )
+            result.trace.append(ToolTrace(name, clean, "breaker", True, unavailable))
+            return unavailable, False
+
         if self.on_tool is not None:
             await self.on_tool(name)
         # log before acting: the call is durable before any side effect happens
@@ -222,14 +234,19 @@ class Agent:
             session, "memory_tool_call", _event(name, clean, parsed.reason, decision, "started")
         )
         final = False
+        crashed = False
         try:
             output = await asyncio.wait_for(tool.handler(parsed), tool.timeout_s)
             if isinstance(output, ToolResult):
                 output, final = output.text, output.final
         except TimeoutError:
-            output = "error: timeout"
+            output, crashed = "error: timeout", True
         except Exception as exc:  # a tool failure must not kill the turn
-            output = f"error: {type(exc).__name__}"
+            output, crashed = f"error: {type(exc).__name__}", True
+        if crashed:
+            self.breaker.failure(name)
+        else:
+            self.breaker.success(name)
         if len(output) > MAX_RESULT_CHARS:
             output = output[:MAX_RESULT_CHARS] + "\n[truncated]"
         logged = (

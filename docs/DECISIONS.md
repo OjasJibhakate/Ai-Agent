@@ -474,3 +474,14 @@ Format: context → decision → alternatives → consequences → revisit if.
 - **Alternatives:** `watchdog` (a dependency; revisit when the daemon exists), a Task Scheduler service now (needs the daemon first).
 - **Consequences:** FR4.1 works in the chat session; true always-on needs the daemon (not built).
 - **Revisit if:** the daemon is built: move the engine into it unchanged.
+
+### D-043 - Planning: sequential steps, typed checks only where reliable, a shared circuit breaker
+- **Date:** 2026-10-26 - **Status:** accepted
+- **Decision:**
+  - A plan (`planning/`) is JSON with steps that depend only on earlier steps. Each ready step runs as a fresh sub-agent; steps run one at a time (one model lane, and approvals must not arrive in parallel), but a failed step blocks only its dependents.
+  - Ladder per step: retry (transient) -> fix (a retry gets every tool) -> re-plan (max 2) -> degrade. A refusal by the owner is final.
+  - `done_when` is `tool_ok`, `file:<wildcard>` or a judged `text:`; guessed file names and placeholder conditions are downgraded to `tool_ok` because they failed good work in the real-model bench. A step titled to make or change something fails if only read tools ran.
+  - Plan state is in its own vault tables (`plans`, `plan_steps`, `plan_log`), not the event stream.
+  - `CircuitBreaker` (3 crashes or timeouts in a row pause a tool for 60 s) is shared by the chat, plan steps and headless goals.
+- **Consequences:** `/plan`, `/resume`, and automatic planning for requests with three or more distinct actions.
+

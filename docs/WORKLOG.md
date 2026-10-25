@@ -574,3 +574,9 @@ Variety and follow-up robustness, `open_path` ("open the ppt you made"), latency
 - Tests: **1265 pass**, ruff clean. New: 24 engine/tool tests on a fake clock (once-only, crash between fire record and message, late reminders, coalesced schedules, restart without repeats, folder debounce/temp files/changes/downtime/flood, goals failing or interrupted, pause) and 5 chat tests.
 - Real model (battery, now 68 tasks): reminder at a time, reminder in minutes, weekday schedule and cancel all pass (4/4). Full battery before this change: 61/64 (the three failures were two model-variance cases, 7 slides instead of 8 and a summary through extract_text, and the reminder that is now fixed).
 - Not done: an always-on daemon (reminders only fire while the chat is open), mail and calendar triggers, proactive suggestions (FR4.2), approving a proposed action from the Inbox in one step.
+
+### 2026-10-26 (night) - planning (FR3) built, recovery started (D-043)
+- Built: `planning/` (models, validation, store, planner, runner, intent), vault migration 0006, `/plan`, `/resume`, live plan view, `recovery/breaker.py` shared by all agents, `bench/plan_tasks.py`.
+- Tests: **1304 pass**, ruff clean.
+- Real model (`bench.plan_tasks`, 3 multi-step goals): 3/3 on the latest run, 2/3 on another; plans take ~4-5 s; whole goals 15-35 s. Found by running it: guessed `file:` names failed good steps; the model chose `list_folder` over the named tool, so each step is now told which tool to use; retries get all tools.
+- Not done: interrupted-step safety (asking before re-running a non-idempotent tool that was mid-call), conversation restore after a crash, the restore timer, and `bench/recovery_bench.py` (kill and resume 50 times). Skills registration (FR2.1) and the sandbox (FR2.3) are not started.

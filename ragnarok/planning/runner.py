@@ -67,6 +67,7 @@ class Outcome:
     error: str = ""
     used: list[str] = field(default_factory=list)
     report: str = ""
+    unavailable: bool = False  # a tool is paused after repeated crashes: retrying cannot help
 
 
 @dataclass
@@ -249,8 +250,8 @@ class PlanRunner:
             if outcome.denied:
                 reason = "you said no"
                 break
-            if attempt == MAX_ATTEMPTS:
-                break
+            if attempt == MAX_ATTEMPTS or outcome.unavailable:
+                break  # a paused tool is not worth retrying: go straight to re-plan or degrade
             rung = "retry" if outcome.transient else "fix"
             await asyncio.to_thread(self.store.log, plan_id, rung, step.id, reason)
             used = ", ".join(dict.fromkeys(outcome.used)) or "no tool"
@@ -366,7 +367,10 @@ class PlanRunner:
         extras = "; ".join(f"{t.tool}: {t.result[:200]}" for t in allowed[-3:])
         if extras and extras not in report:
             report = f"{report}\n{extras}".strip()
-        return Outcome(result.text, denied, transient, error, [t.tool for t in allowed], report)
+        down = any(out.startswith("error: unavailable") for out in failing.values())
+        return Outcome(
+            result.text, denied, transient, error, [t.tool for t in allowed], report, down
+        )
 
     # ---- checking the result ------------------------------------------------------------------
 
