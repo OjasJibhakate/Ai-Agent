@@ -223,3 +223,19 @@ Format: context → decision → alternatives → consequences → revisit if.
   `key.json` stores the KDF parameters, so cost can be raised later without breaking old keystores.
 - **Consequences:** `keyring` (Credential Manager for account secrets) is not added yet, since no account secrets exist.
   DPAPI means anyone logged in as the user can unlock, as stated in the threat model (ARCHITECTURE 6.3).
+
+### D-026 — Defaults from the retrieval benchmark: exact index, `min_semantic` 0.55
+- **Date:** 2026-10-25 · **Status:** accepted (resolves the "revisit if" in D-019; supersedes the Turbovec default in D-019/D-020)
+- **Context:** `bench/retrieval_bench.py` ran 124 labelled queries over 500 active memories with real `nomic-embed-text` vectors.
+  Turbovec 4-bit reached recall@10 of 0.920 against exact search, below the 0.95 bar set in D-019. Through the whole pipeline, though, both indexes
+  scored the same (recall@5 0.895, MRR 0.835 vs 0.837). Turbovec is faster only at large sizes (50k vectors: 1.1 ms vs 6.7 ms).
+  Vector search always returns neighbours, and nomic scores unrelated text around 0.5, so a cutoff is needed.
+- **Decision:**
+  - `MemoryStore` defaults to `ExactIndex`. `TurbovecIndex` stays available (`index_kind="turbovec"`) for corpora in the tens of thousands, and the
+    checkpoint/replay code and its tests are kept. If we switch to it, add exact rescoring of its top candidates first.
+  - `DEFAULT_MIN_SEMANTIC = 0.55`. Sweep: recall@5 0.911 (no cutoff) -> 0.901 (0.55) -> 0.895 (0.60) -> 0.813 (0.65). Paraphrase recall@5 is
+    0.82 / 0.77 / 0.74 / 0.56 across the same steps. The utility function in the bench preferred 0.60, but it sits close to a cliff, and a missed memory
+    costs more than an irrelevant one (the model receives memories as data and can ignore them), so I chose 0.55.
+- **Consequences:** The cutoff is not a precise relevance filter: 47% of unanswerable queries still return something. Deciding relevance is left to
+  the chat model, within the ~1,000-token memory budget.
+- **Revisit if:** the corpus grows past about 20k memories, or the embedding model changes (the cutoff is specific to `nomic-embed-text`).

@@ -25,9 +25,9 @@ EMBED_DIM = 768
 INDEX_NAME = "memories"
 RRF_K = 60
 CANDIDATES = 30
-# Vector search always returns neighbours, so weak matches are cut. Placeholder until the
-# retrieval benchmark calibrates it on real nomic-embed-text scores.
-DEFAULT_MIN_SEMANTIC = 0.3
+# Vector search always returns neighbours, so weak matches are cut. Chosen from the
+# bench/retrieval_bench.py sweep on real nomic-embed-text scores (D-026).
+DEFAULT_MIN_SEMANTIC = 0.55
 BASE_CONFIDENCE: dict[str, float] = {"user_stated": 0.95, "observed": 0.85, "inferred": 0.7}
 
 _STOP = frozenset(
@@ -87,7 +87,7 @@ class MemoryStore:
         *,
         dim: int = EMBED_DIM,
         model: str = "nomic-embed-text",
-        index_kind: str = "turbovec",
+        index_kind: str = "exact",
         clock: Callable[[], datetime] = utcnow,
         min_semantic: float = DEFAULT_MIN_SEMANTIC,
     ) -> None:
@@ -503,12 +503,17 @@ class MemoryStore:
         *,
         project: str | None = None,
         include_secret: bool = False,
+        mode: str = "hybrid",
+        rerank: bool = True,
     ) -> list[MemoryHit]:
-        """Hybrid retrieval: FTS5 + vector -> RRF -> rerank -> verify against SQLite."""
-        lexical = self._lexical(query)
+        """Hybrid retrieval: FTS5 + vector -> RRF -> rerank -> verify against SQLite.
+
+        `mode` ("hybrid", "fts", "vector") and `rerank` exist so the benchmark can compare stages.
+        """
+        lexical = self._lexical(query) if mode in ("hybrid", "fts") else []
         semantic = (
             [i for i, s in self.index.search(query_vector, CANDIDATES) if s >= self.min_semantic]
-            if query_vector is not None
+            if query_vector is not None and mode in ("hybrid", "vector")
             else []
         )
         lex_rank = {mid: r for r, mid in enumerate(lexical, 1)}
@@ -535,6 +540,17 @@ class MemoryStore:
                 else 0.0
             )
             same_project = project_id is not None and mem.project_id == project_id
+            if not rerank:
+                hits.append(
+                    MemoryHit(
+                        memory=mem,
+                        lexical_rank=lex_rank.get(mid),
+                        semantic_rank=sem_rank.get(mid),
+                        rrf=rrf[mid],
+                        score=rrf[mid],
+                    )
+                )
+                continue
             score = (
                 rrf[mid]
                 * (1 + 0.30 * mem.importance)

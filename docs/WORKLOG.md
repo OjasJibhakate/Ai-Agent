@@ -268,3 +268,45 @@ D-020 (store the Turbovec index as bytes inside the vault) and D-021 (start Olla
 
 ### Next
 Retrieval benchmark with real embeddings (500 memories, 100 labelled queries), then M3.
+
+## 2026-10-25 (night) - retrieval benchmark, issue triage
+
+### Correction to the earlier entry (cold start)
+The "54 s to first token after a cold load" finding was **not reproducible**. Two clean re-runs gave:
+- a tiny prompt after `ollama stop`: 7.0 s wall (6.5 s load), then 0.3 s per call;
+- the real bench prompt (565 tokens) after `ollama stop`: **5.5 s to first token** (load 4.9 s).
+
+The 54 s happened right after the 3.3 GB download finished, so it was probably the first read of a freshly written model file (not proven).
+Working figure: a cold model costs about 5-7 s once. Warming both models at daemon start is still the right plan, with a long timeout on that call.
+
+### Embedding latency, diagnosed
+Ollama's own `total_duration` was 47.8 ms against 50.8 ms wall, so HTTP overhead is about 3 ms; the time is inside Ollama.
+Under the benchmark's load, query embeds took p50 81.6 ms, p95 116.6 ms. Idle GPU wake-up is not the cause: first calls after 5-60 s idle took 95-145 ms.
+**Do not use `localhost`:** the first connection to `http://localhost:11434` costs about 2.2 s every time (fresh process, both runs), while
+`http://127.0.0.1:11434` is immediate. The gateway already uses the IP.
+
+### Retrieval benchmark (`bench/retrieval_bench.py`, real vectors)
+Data: 500 active memories (plus 15 superseded and 10 deleted), 124 queries: paraphrase 39, exact identifier 20, entity 15, temporal 10,
+contradicted 15, deleted 10, unanswerable 15. Synthetic and seeded; distractors share vocabulary with the targets.
+Results are in `bench/results/retrieval_2026-10-25.json`.
+
+| Stage (min_semantic 0.60 in this run) | recall@5 | MRR |
+|---|---|---|
+| FTS5 only | 0.544 | 0.402 |
+| Vector only | 0.647 | 0.564 |
+| Hybrid (RRF) | 0.729 | 0.548 |
+| Hybrid + rerank | 0.895 | 0.835 |
+
+- Superseded and deleted memories were **never returned** (forbidden rate 0.000 in every run).
+- Per category (hybrid + rerank, 0.60): exact 1.00, entity 1.00, temporal 1.00, contradicted 0.73, paraphrase 0.74.
+  The temporal category is built so that recency decides it, so part of the rerank gain is by construction. Paraphrase is the real weak spot.
+- Retrieval latency: query embed p95 117 ms + search p95 2.3 ms = about **119 ms** (NFR2.1 limit 800 ms).
+- **Turbovec vs exact (500 real vectors):** 4-bit recall@10 0.920 (top-1 agreement 0.911, 1.06 MB); 2-bit recall@10 0.799. Below the 0.95 bar, so D-026 makes exact the default.
+  Search latency, k=30: 10k vectors 3.7 ms (exact) vs 3.5 ms (Turbovec); 50k vectors 6.7 ms vs 1.1 ms.
+- **Restart at 10k memories:** rebuild from embeddings 0.44 s; load from the saved blob 0.20 s (expected under 1 s: confirmed).
+- Decision D-026: exact index by default, `min_semantic` 0.55.
+
+### Still weak / not done
+- Paraphrase recall@5 is 0.77 at the chosen cutoff; contradicted-fact queries find the new fact 73% of the time. Ideas: query expansion on low confidence,
+  or a second embedding of each memory phrased as a question. Not tried.
+- The labelled set is mine and synthetic; it checks plumbing and relative stage quality, not real-life recall.

@@ -192,7 +192,7 @@ async def test_restart_loads_checkpointed_index_and_replays_later_writes(tmp_pat
     vault.close()
 
     vault2 = Vault.open(tmp_path / "vault.db", key)
-    store2 = MemoryStore(vault2, clock=Clock(), min_semantic=NOISE)
+    store2 = MemoryStore(vault2, index_kind="turbovec", clock=Clock(), min_semantic=NOISE)
     assert store2.start() == "loaded"  # blob loaded, outbox entries after it replayed
     assert len(store2.index) == 21
     svc2 = MemoryService(store2, FakeEmbedder())
@@ -208,7 +208,7 @@ async def test_corrupt_index_blob_triggers_rebuild(tmp_path, key):
     vault.close()
 
     vault2 = Vault.open(tmp_path / "vault.db", key)
-    store2 = MemoryStore(vault2, clock=Clock(), min_semantic=NOISE)
+    store2 = MemoryStore(vault2, index_kind="turbovec", clock=Clock(), min_semantic=NOISE)
     assert store2.start() == "rebuilt"
     svc2 = MemoryService(store2, FakeEmbedder())
     assert (await svc2.recall("meetings"))[0].memory.id == mid
@@ -226,7 +226,7 @@ async def test_stale_blob_count_mismatch_triggers_rebuild(tmp_path, key):
     vault.close()
 
     vault2 = Vault.open(tmp_path / "vault.db", key)
-    store2 = MemoryStore(vault2, clock=Clock(), min_semantic=NOISE)
+    store2 = MemoryStore(vault2, index_kind="turbovec", clock=Clock(), min_semantic=NOISE)
     assert store2.start() == "rebuilt"
     assert (await MemoryService(store2, FakeEmbedder()).recall("pears"))[0].memory.id == second
     vault2.close()
