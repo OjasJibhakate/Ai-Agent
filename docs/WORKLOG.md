@@ -580,3 +580,21 @@ Variety and follow-up robustness, `open_path` ("open the ppt you made"), latency
 - Tests: **1304 pass**, ruff clean.
 - Real model (`bench.plan_tasks`, 3 multi-step goals): 3/3 on the latest run, 2/3 on another; plans take ~4-5 s; whole goals 15-35 s. Found by running it: guessed `file:` names failed good steps; the model chose `list_folder` over the named tool, so each step is now told which tool to use; retries get all tools.
 - Not done: interrupted-step safety (asking before re-running a non-idempotent tool that was mid-call), conversation restore after a crash, the restore timer, and `bench/recovery_bench.py` (kill and resume 50 times). Skills registration (FR2.1) and the sandbox (FR2.3) are not started.
+
+## 2026-10-26 (night) - the pixel cat GUI (D-044), "we can't open CMD for every task"
+
+### Built
+- `ragnarok/gui/`: `sprites.py` (27 hand-drawn pixel frames: walk, sit, sleep, yawn, scratch, groom, alert, carried, pounce...), `brain.py` (behaviour), `bridge.py` (engine to window), `chat.py` (the popup), `app.py` (cat window, engine thread), `unlock.py` (passphrase and first-run dialogs), `winapi.py` (taskbar, DPI, one copy only), `startup.py` (start with Windows).
+- Looked at on the real screen (screen capture of the running program): the cat stands on the taskbar with a see-through background; a real click and typed message ("what is 15 percent of 2400") gave "15 percent of 2400 is 360." in 1.4 s; picking the cat up, carrying it across the taskbar and dropping it made it fall and land where it was dropped; a pointer brought within about 170 px made it run over and sit facing it; a far pointer was ignored.
+
+### Found by using it
+- `Bridge.emit(kind, **data)` clashed with events that carry their own `kind` (the engine crashed on the first reply): the event name is now positional-only.
+- The first cat chased the pointer anywhere on the taskbar, and wandered every few seconds: the owner found it distracting. Now it only notices a pointer within about 200 px, and the default behaviour is calm (measured over 30 simulated minutes x 15 cats: about 1.1 changes a minute, walking 1.6% of the time, 36 px a minute; the old behaviour was 6.2 changes a minute, walking 52%, 1,200 px a minute). Tests pin these numbers.
+- My own helper that stopped test cats matched itself and killed the shell: match only Python processes.
+
+### Tests
+- **1380 pass**, ruff clean. New: 60 on the cat's behaviour and pictures, 12 on the bridge (including the real chat engine run through the GUI console with the Allow button gating a risky tool), 12 on the chat window (drawn for real and clicked), 5 on start-with-Windows.
+
+### Not done / not verified
+- Not yet used by the owner with their real vault (all live tests used a throwaway one). Recovery work (kill-and-resume bench) is paused for this.
+- One monitor only; a taskbar on the left, right or top is not specially handled.

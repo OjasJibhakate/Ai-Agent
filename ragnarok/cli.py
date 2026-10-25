@@ -336,6 +336,21 @@ def cmd_memory(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gui(args: argparse.Namespace) -> int:
+    ui = Console()
+    if args.startup:
+        from ragnarok.gui import startup
+
+        if args.startup == "on":
+            ui.success(f"The cat will appear when you log in ({startup.install()}).")
+        else:
+            ui.success("Removed." if startup.remove() else "It was not set to start with Windows.")
+        return 0
+    from ragnarok.gui.app import main as run_gui
+
+    return run_gui()
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     ui = Console()
     failures = 0
@@ -457,6 +472,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = sub.add_parser("doctor", help="check the setup")
     doctor.set_defaults(run=cmd_doctor)
+
+    gui = sub.add_parser("gui", help="the pixel cat on your taskbar (click it to chat)")
+    gui.add_argument(
+        "--startup", choices=["on", "off"], help="start the cat when you log in to Windows (or not)"
+    )
+    gui.set_defaults(run=cmd_gui)
     return p
 
 

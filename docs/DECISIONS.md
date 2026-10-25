@@ -485,3 +485,14 @@ Format: context → decision → alternatives → consequences → revisit if.
   - `CircuitBreaker` (3 crashes or timeouts in a row pause a tool for 60 s) is shared by the chat, plan steps and headless goals.
 - **Consequences:** `/plan`, `/resume`, and automatic planning for requests with three or more distinct actions.
 
+
+### D-044 - The interface is a pixel cat on the taskbar (tkinter), and the terminal is optional
+- **Date:** 2026-10-26 - **Status:** accepted (supersedes the "React web UI first" plan in AGENTS.md for now)
+- **Context:** The owner does not want to open a terminal for every task. They asked for a small pixel cat that lives on the taskbar, moves like a real cat, and opens a short chat window when clicked.
+- **Decision:**
+  - `ragnarok/gui/` is a tkinter program (Python's own, so no new dependency): a borderless always-on-top window with a see-through colour key for the cat, and a small chat popup. `rag gui` starts it; `rag gui --startup on` adds a hidden launcher to the Windows Startup folder.
+  - The chat engine (`ChatApp`) is reused unchanged. `GuiConsole` turns what it prints into events and `Bridge` carries them and the window's answers over two queues, so a permission question becomes a card with Allow/Deny buttons and a plan becomes a card with Run/Cancel. The engine runs in its own thread, so the cat keeps moving while the model thinks.
+  - The cat's behaviour (`brain.py`) is pure logic with a seeded random source, so every reaction is unit-tested without a screen. Pixel art is drawn as text (`sprites.py`).
+  - Interactions: click opens the chat; drag lifts it by the scruff and you can drop it anywhere on the taskbar (it falls, bounces, lands); it purrs when the pointer rests on it, runs after the pointer only when the pointer comes within about 200 px (and keeps following until it is 400 px away), and pounces at a fast flick.
+  - It is calm by default (about one change a minute, walking under 2% of the time) because it must not distract; "Playful" in its menu makes it busier. Unlocking uses the Windows (DPAPI) key if set up, else a small passphrase dialog.
+- **Consequences:** The web UI in the architecture is deferred. Reminders and plan alerts make the cat stand up with an "!" while the chat is closed.
