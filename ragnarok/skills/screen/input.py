@@ -3,7 +3,9 @@
 The rules are plain functions (easy to test without a desktop). They are applied by the task loop
 *before* anything is sent:
   - only an allow-list of keys and combinations (no Alt+F4, Win+R, Ctrl+Alt+anything, ...);
-  - text that looks like a secret (password, key, token, card number) is never typed;
+  - text that looks like a secret (password, key, token, card number) is never typed, nor any value
+    the user labelled as a password or PIN in their message: they log in themselves;
+  - a web address is typed only if the user wrote it: the model never guesses one;
   - nothing is typed or sent as a key into a shell, terminal, Run box or system tool, because there
     typed text is executed, not just entered.
 """
@@ -18,6 +20,7 @@ from ctypes import wintypes
 from dataclasses import dataclass
 
 from ragnarok.memory.store import scrub_secrets
+from ragnarok.runtime.tools import CURRENT_TEXT
 from ragnarok.skills.screen.winapi import TERMINAL_HOSTS, WindowInfo
 
 MAX_TYPED_CHARS = 300
@@ -29,6 +32,18 @@ BLOCKED_TITLES = re.compile(
     r"^(run|windows security|user account control|windows powershell.*)$", re.I
 )
 _CARD = re.compile(r"\b(?:\d[ -]?){13,19}\b")
+# "password:- x", "my pin is 4821", "otp = 1234": the value after a label that names a secret
+_LABELLED = re.compile(
+    r"(?i)\b(?:password|passwd|pwd|pass|passcode|passphrase|pin|otp|secret|token)\b"
+    r"\s*(?:is|=|:-?|-)?\s*(\S{4,})"
+)
+_TLDS = (
+    "com|org|net|edu|gov|mil|int|io|co|in|ac|sg|uk|us|de|fr|jp|cn|au|ca|ai|app|dev|me|info|biz|"
+    "tv|xyz|online|site|tech|ly|gg|ru|br|es|it|nl|se|ch"
+)
+_ADDRESS = re.compile(
+    rf"(?:https?://)?(?:[a-z0-9-]+\.)+(?:{_TLDS})(?::\d+)?(?:[/?#]\S*)?", re.IGNORECASE
+)
 
 
 class InputRefused(ValueError):
@@ -87,13 +102,47 @@ def parse_keys(spec: str) -> list[str]:
     raise InputRefused(f"I do not press {spec!r} (it can close, run or change things)")
 
 
-def check_text(text: str) -> None:
+def user_secrets(user_text: str) -> list[str]:
+    """Values the user wrote after a word like password, PIN or OTP in their message."""
+    return [m.group(1).rstrip(".,;)") for m in _LABELLED.finditer(user_text)]
+
+
+def looks_like_password(text: str) -> bool:
+    """A single word of 8 to 64 characters mixing upper and lower case, digits and a symbol."""
+    t = text.strip()
+    return (
+        8 <= len(t) <= 64
+        and not re.search(r"\s", t)
+        and "://" not in t
+        and re.search(r"[a-z]", t) is not None
+        and re.search(r"[A-Z]", t) is not None
+        and re.search(r"\d", t) is not None
+        and re.search(r"[^\w\s.\-]", t) is not None
+    )
+
+
+def check_text(text: str, user_text: str | None = None) -> None:
     if not text or len(text) > MAX_TYPED_CHARS:
         raise InputRefused(f"I type between 1 and {MAX_TYPED_CHARS} characters at a time")
     if any(ord(c) < 32 and c not in "\n\t" for c in text):
         raise InputRefused("that text contains control characters")
     if scrub_secrets(text) != text or _CARD.search(text):
         raise InputRefused("that looks like a password, key or card number, so I will not type it")
+    user = CURRENT_TEXT.get() if user_text is None else user_text
+    if looks_like_password(text) or any(value in text for value in user_secrets(user)):
+        raise InputRefused(
+            "that is a password or PIN, so I will not type it. Ask the user to type it "
+            "themselves, then carry on from the page they reach"
+        )
+    wrote = text.strip().lower()
+    if (
+        _ADDRESS.fullmatch(wrote)
+        and re.sub(r"^https?://", "", wrote).rstrip("/") not in user.lower()
+    ):
+        raise InputRefused(
+            "I only type a web address the user wrote; I do not guess one. Ask them for the "
+            "link, or search for the site by name instead"
+        )
 
 
 def check_target_window(window: WindowInfo | None, what: str) -> None:

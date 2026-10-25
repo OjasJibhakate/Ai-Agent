@@ -42,8 +42,9 @@ ASKS_ABOUT_SCREEN = re.compile(
 )
 APPROVAL_NOTE = (
     "This lets me look at your screen and use your mouse and keyboard until the task is done "
-    "(at most 15 steps). Hold Esc or move the mouse to stop me. I never type into a terminal. "
-    "This is experimental: I often miss small buttons and list rows, so watch what I do."
+    "(at most 15 steps). Hold Esc or move the mouse to stop me. I never type into a terminal "
+    "or type a password. This is experimental: I often miss small buttons and list rows, so "
+    "watch what I do."
 )
 
 

@@ -58,6 +58,12 @@ BASE16 = (
 )  # fmt: skip
 
 
+ALERTS = {  # kind of thing that arrived by itself -> (label, colour)
+    "reminder": ("Reminder", AMBER), "file": ("New file", SKY),
+    "result": ("Done", GREEN), "failed": ("Problem", CORAL),
+}  # fmt: skip
+
+
 def visible_len(text: str) -> int:
     return len(_ANSI.sub("", text))
 
@@ -402,9 +408,14 @@ class Console:
     def footer(self, tools: list[tuple[str, bool]], seconds: float) -> None:
         """A dim line under an answer: which tools ran, and how long it took."""
         g = self.g
+        counts: dict[tuple[str, bool], int] = {}
+        for entry in tools:
+            counts[entry] = counts.get(entry, 0) + 1
+        times = "x" if self.ascii else "×"
         names = [
-            self.teal(name) if allowed else self.bad(f"{g['no']} {name} blocked")
-            for name, allowed in tools
+            (self.teal(name) if allowed else self.bad(f"{g['no']} {name} blocked"))
+            + (self.dim(f" {times}{n}") if n > 1 else "")
+            for (name, allowed), n in counts.items()
         ]
         parts = [f"{self.dim(g['tool'])}  " + ", ".join(names)] if names else []
         parts.append(self.faint(f"{seconds:.1f}s"))
@@ -414,14 +425,16 @@ class Console:
         """Draw the 'allow this?' card; returns the prompt text for its last line."""
         g = self.g
         side = f"   {self.amber(g['v'])} "
-        room = self.width - 16
+        shown = list(args.items())[:6]
+        col = min(18, max([10] + [len(k) + 2 for k, _v in shown]))  # room for the longest name
+        room = self.width - 6 - col
         self.write(f"   {self.amber(g['tl'] + g['h'])} {self.bold('Permission needed')}")
         self.write(side + self.teal(name))
-        for key, value in list(args.items())[:6]:
+        for key, value in shown:
             text = repr(value)
             if len(text) > room:
                 text = text[: room - len(g["ellipsis"])] + g["ellipsis"]
-            self.write(side + self.dim(f"{key:<10}") + text)
+            self.write(side + self.dim(f"{key:<{col}}") + text)
         if len(args) > 6:
             self.write(side + self.faint(f"{g['ellipsis']} {len(args) - 6} more"))
         for part in textwrap.wrap(warning, self.width - 6):
@@ -447,6 +460,9 @@ class Console:
             ("/memories", "what I remember about you"),
             ("/profile", "what is always in my prompt"),
             ("/forget N", "delete memory N for good"),
+            ("/inbox", "reminders and results that arrived while you were away"),
+            ("/reminders", "what I will remind you of or watch for"),
+            ("/cancel N", "stop reminder, schedule or watch N"),
             ("/mode M", "ask, edits or full: how much I do without asking"),
             ("/clear", "clear the screen"),
             ("/quit", "leave (I keep learning from this chat)"),
@@ -470,6 +486,48 @@ class Console:
             tag = self.paint(TYPE_COLOR.get(m.memory_type, STEEL), f"{m.memory_type[:10]:<10}")
             self.write(f"   {self.amber(f'm{m.id:<3}')} {tag} {text}")
         self.write(f"   {self.faint(str(len(memories)) + ' shown')}")
+        self.write()
+
+    # ---- things that arrive by themselves --------------------------------------------------
+
+    def alert(self, kind: str, title: str, body: str = "") -> None:
+        """Something happened on its own (a reminder came due, a file arrived)."""
+        label, colour = ALERTS.get(kind, ("Inbox", VIOLET))
+        sep = self.dim(self.g["dot"])
+        self.write()
+        self.write(
+            " " + self.paint(colour, self.g["spark"], bold=True) + " " + self.bold(label)
+            + f" {sep} " + title
+        )  # fmt: skip
+        shown = 0
+        for line in body.splitlines():
+            for part in textwrap.wrap(line, self.width - 6) or [""]:
+                if shown < 8:
+                    self.write("   " + self.faint(part))
+                shown += 1
+        if self.tty:
+            self.out.write("\a")  # the terminal's own bell
+            self.out.flush()
+
+    def inbox(self, items: list) -> None:
+        """The Inbox, oldest first, with what is new marked."""
+        if not items:
+            self.notice("Your Inbox is empty.")
+            return
+        self.write()
+        for item in reversed(items):
+            _label, colour = ALERTS.get(item.kind, ("Inbox", VIOLET))
+            mark = self.paint(colour, self.g["live"]) if item.status == "unread" else " "
+            when = item.created_at[5:16]
+            room = self.width - 28
+            title = (
+                item.title
+                if len(item.title) <= room
+                else item.title[: room - 1] + self.g["ellipsis"]
+            )
+            self.write(f"   {mark} {self.dim(f'#{item.id:<3}')} {self.faint(when)}  {title}")
+            for line in item.body.splitlines()[:3]:
+                self.write("        " + self.faint(line[: self.width - 10]))
         self.write()
 
     def clear(self) -> None:

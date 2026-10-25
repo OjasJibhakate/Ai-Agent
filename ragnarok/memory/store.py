@@ -55,7 +55,10 @@ def _stamp(dt: datetime) -> str:
 
 
 _SECRET_PATTERNS = (
-    re.compile(r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key)\b\s*(is|=|:)\s*\S+"),
+    re.compile(
+        r"(?i)\b(password|passwd|pwd|passcode|passphrase|pin|otp|secret|token|api[_-]?key)\b"
+        r"\s*(is|=|:-?)\s*\S+"
+    ),
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]{16,}"),
     re.compile(r"\b(sk|ghp|gho|xox[bap])[-_][A-Za-z0-9_-]{16,}\b"),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),

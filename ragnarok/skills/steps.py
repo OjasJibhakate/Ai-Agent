@@ -21,6 +21,12 @@ def more_steps(user_text: str | None = None) -> bool:
     return bool(ADDS_A_STEP.search(CURRENT_TEXT.get() if user_text is None else user_text))
 
 
+FINISHED_NOTE = (
+    "\n[Done. Unless the user asked for another step, tell them this result; do not list, open "
+    "or re-check what was made.]"
+)
+
+
 def reply(text: str) -> str | ToolResult:
     """`text` as the final answer, or as plain output for the model when more steps follow."""
-    return text if more_steps() else ToolResult(text, final=True)
+    return text + FINISHED_NOTE if more_steps() else ToolResult(text, final=True)

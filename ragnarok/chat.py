@@ -27,6 +27,7 @@ from ragnarok.runtime.gateway import CHAT_MODEL, OLLAMA_URL, Gateway
 from ragnarok.runtime.loop import Agent, Session
 from ragnarok.runtime.tools import PROGRESS, Tool, memory_tools
 from ragnarok.skills.apps import WindowsApps, app_tools
+from ragnarok.skills.digest import digest_tools
 from ragnarok.skills.documents import document_tools
 from ragnarok.skills.downloads import download_tools
 from ragnarok.skills.fileops import file_op_tools
@@ -35,6 +36,11 @@ from ragnarok.skills.images import image_tools
 from ragnarok.skills.screen.tools import screen_tools
 from ragnarok.skills.shell import shell_tools
 from ragnarok.skills.web import web_tools
+from ragnarok.skills.webpage import webpage_tools
+from ragnarok.triggers.engine import Delivered, TriggerEngine
+from ragnarok.triggers.store import TriggerStore
+from ragnarok.triggers.toast import toast
+from ragnarok.triggers.tools import describe, trigger_tools
 from ragnarok.ui import Console, Welcome
 
 LEARN_AFTER_SECONDS = 15.0  # idle time before the background learner starts (read at run time)
@@ -119,15 +125,19 @@ class ChatApp:
         self.read_line = read_line
         self.approve_line = approve_line
         self._catalog = WindowsApps() if tools is None else None
+        self.triggers = TriggerStore(rt.store.vault)
         if tools is None:
             tools = (
                 memory_tools(rt.svc, rt.ingestor)
+                + trigger_tools(self.triggers, mode=self.mode)
                 + app_tools(self._catalog)
                 + file_tools(mode=self.mode)
                 + file_op_tools(mode=self.mode)
                 + shell_tools()
                 + web_tools()
                 + document_tools()
+                + digest_tools(rt.gateway, mode=self.mode)
+                + webpage_tools()
                 + (
                     []
                     if os.environ.get("RAGNAROK_NO_DOWNLOADS") == "1"
@@ -143,6 +153,7 @@ class ChatApp:
             profile=self.mode.profile,
             approve=self._approve,
             tools=tools,
+            on_tool=self._tool_started,
         )
         self.session = Session()
         self.learner = BackgroundLearner(
@@ -151,12 +162,45 @@ class ChatApp:
             maintenance,
         )
         self._background: list[asyncio.Task] = []
+        self.engine = TriggerEngine(
+            self.triggers,
+            goal_runner=self._run_goal,
+            listener=self._delivered,
+            idle=lambda: self._spinner is None,  # background work waits for the user's own turn
+        )
+        self._proposals: list[tuple[str, dict]] = []
         self._spinner = None  # the "thinking" animation of the turn in progress
+        self._open_line = False  # the cursor is in the middle of a streamed line
+        self._need_marker = False  # the next streamed text starts a new message
+        self._shown: list[str] = []  # everything streamed this turn
 
     # ---- approvals ---------------------------------------------------------------------------
 
+    async def _between(self) -> None:
+        """Make room for something that is not the answer (a question, a progress line): stop
+        the animation, finish the line being streamed, and start a new message afterwards."""
+        await self._pause_spinner()
+        if self._open_line:
+            self.c.write()
+            self._open_line = False
+        if self._spinner is None or not self._spinner.active:
+            self._need_marker = True
+
+    async def _tool_started(self, name: str) -> None:
+        """A tool is about to run: show that work is going on, even after some text was shown."""
+        spinner = self._spinner
+        if spinner is None:
+            return
+        await self._between()
+        if spinner.active:
+            spinner.resume()
+        else:
+            spinner.label = "Working"
+            spinner.start()
+            self._need_marker = False  # the spinner prints the marker when text comes
+
     async def _approve(self, name: str, args: dict, decision: Decision) -> bool:
-        await self._pause_spinner()  # the animation would draw over the question
+        await self._between()  # the animation would draw over the question
         tool = self.agent.tools.get(name)
         warning = (tool.approval_note if tool else "") or decision.reason
         prompt = self.c.approval(name, args, warning)
@@ -165,6 +209,40 @@ class ChatApp:
         finally:
             self._resume_spinner()
         return answer.strip().lower() in ("y", "yes")
+
+    # ---- things that happen by themselves (triggers) ------------------------------------------
+
+    async def _delivered(self, item: Delivered) -> None:
+        """A reminder came due, or a watched file arrived: tell the user now."""
+        if self._spinner is not None:
+            await self._between()
+        self.c.alert(item.kind, item.title, item.body)
+        if self.c.tty and self.c.color:
+            self._background.append(asyncio.create_task(toast(item.title, item.body)))
+
+    async def _headless_approve(self, name: str, args: dict, decision: Decision) -> bool:
+        self._proposals.append((name, args))  # never runs: it waits for the owner
+        return False
+
+    async def _run_goal(self, goal: str, event: dict) -> str:
+        """Work on a goal with nobody watching: read and think freely, change nothing."""
+        helper = Agent(
+            self.rt.store,
+            self.rt.svc,
+            self.rt.ingestor,
+            self.rt.gateway,
+            profile="background",
+            approve=self._headless_approve,
+            tools=list(self.agent.tools.values()),
+        )
+        self._proposals = []
+        result = await helper.turn(Session(), goal)
+        text = result.text.strip() or "(nothing to report)"
+        if self._proposals:
+            lines = [f"- {name}({', '.join(f'{k}={v!r}' for k, v in args.items())})"
+                     for name, args in self._proposals]  # fmt: skip
+            text += "\nWaiting for your OK (ask me and I will do it):\n" + "\n".join(lines)
+        return text
 
     async def _pause_spinner(self) -> None:
         if self._spinner is not None:
@@ -176,7 +254,7 @@ class ChatApp:
 
     async def _note(self, text: str) -> None:
         """A progress line from a long-running tool (each step of a screen task)."""
-        await self._pause_spinner()
+        await self._between()
         self.c.write("   " + self.c.dim(self.c.g["tool"]) + "  " + self.c.faint(text))
         self._resume_spinner()
 
@@ -190,6 +268,10 @@ class ChatApp:
         if self.mode.name != "ask":
             self.c.notice(f"Mode: {self.mode.name} - {SUMMARY[self.mode.name]}. /mode changes it.")
         self.learner.schedule()  # catch up on earlier conversations while the user reads
+        unread = await asyncio.to_thread(self.triggers.unread_count)
+        if unread:
+            self.c.notice(f"{unread} new in your Inbox. Type /inbox to read.")
+        self.engine.start()
 
         try:
             while True:
@@ -210,6 +292,7 @@ class ChatApp:
                     continue
                 await self._turn(line)
         finally:
+            await self.engine.stop()
             await self.learner.cancel()
             for task in self._background:
                 task.cancel()
@@ -233,22 +316,37 @@ class ChatApp:
         spinner.start()
         PROGRESS.set(self._note)
 
+        self._open_line = False
+        self._need_marker = False
+        self._shown = []
+
         async def show(chunk: str) -> None:
             if spinner.active:
                 done = bool(self.agent.current and self.agent.current.final_tool)
                 await spinner.stop("done" if done else "bot")
+            elif self._need_marker:
+                self.c.out.write(self.c.assistant_marker("bot"))
+            self._need_marker = False
             self.c.out.write(chunk.replace("\n", "\n   "))
             self.c.out.flush()
+            self._shown.append(chunk)
+            self._open_line = not chunk.endswith("\n")
 
         try:
             result = await self.agent.turn(self.session, text, on_delta=show)
         finally:
             if spinner.active and spinner._task is not None:
                 await spinner.pause()  # never leave an animation running if the turn failed
-        if spinner.active:  # nothing was streamed (an error, or an empty reply)
+        if spinner.active:  # nothing more was streamed (an error, or an empty reply)
             await spinner.stop("warn" if result.stopped else "bot")
             self.c.out.write(result.text or self.c.faint("(no reply)"))
+        elif result.stopped and result.text.strip() not in "".join(self._shown):
+            # the turn was cut short after some text had already been shown: say why
+            if self._open_line:
+                self.c.write()
+            self.c.out.write(self.c.assistant_marker("warn") + result.text)
         self._spinner = None
+        self._open_line = False
         self.c.write()
         self.c.footer([(t.tool, t.allowed) for t in result.trace], result.total_ms / 1000)
         self.c.write()
@@ -276,6 +374,21 @@ class ChatApp:
                 self.c.success(f"Forgot m{int(arg)}.")
             else:
                 self.c.error("No such memory.")
+        elif cmd == "/inbox":
+            items = await asyncio.to_thread(self.triggers.inbox)
+            self.c.inbox(items)
+            await asyncio.to_thread(self.triggers.mark_read)
+        elif cmd == "/reminders":
+            active = await asyncio.to_thread(self.triggers.list)
+            if not active:
+                self.c.notice("Nothing is scheduled. Say 'remind me to ... at ...' to add one.")
+            for trigger in active:
+                self.c.write("   " + describe(trigger))
+        elif cmd == "/cancel" and arg.strip().isdigit():
+            if await asyncio.to_thread(self.triggers.cancel, int(arg)):
+                self.c.success(f"Cancelled #{int(arg)}.")
+            else:
+                self.c.error("No such active reminder.")
         elif cmd == "/clear":
             self.c.clear()
         elif cmd == "/mode":

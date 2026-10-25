@@ -36,6 +36,10 @@ exclude = ["*.md"]
 [tool.ruff.lint.per-file-ignores]
 "bench/*" = ["E501"]  # data tables and report lines
 "ragnarok/skills/office.py" = ["E501"]  # XML namespace and content-type strings
+"ragnarok/skills/webpage.py" = ["E501"]  # the embedded HTML page
+"ragnarok/triggers/toast.py" = ["E501"]  # the embedded PowerShell script
 "ragnarok/ui.py" = ["RUF001"]  # the interface deliberately uses typographic glyphs
 "tests/test_m4_ui.py" = ["RUF001"]  # ...and so does its test
+"tests/test_chat_flow.py" = ["RUF001"]  # the footer's multiplication sign
+"tests/test_pdfwriter.py" = ["RUF001"]  # typographic characters are the point of one test
 "tests/*" = ["RUF059"]  # unused names from tuple-returning test setup helpers

@@ -1,0 +1,98 @@
+[
+  {
+    "task": "reminder",
+    "ok": true,
+    "why": null,
+    "seconds": 3.4,
+    "tools": [
+      "set_reminder"
+    ],
+    "approvals": [],
+    "trace": [
+      [
+        "set_reminder",
+        {
+          "what": "call mom",
+          "when": "at 6pm"
+        },
+        "Okay, I'll remind you to call mom today at 6:00 PM. (#1) I can only do this while Ragnarok is open; if it is closed when the time comes, I will tell you as soon"
+      ]
+    ],
+    "answer": "Okay, I'll remind you to call mom today at 6:00 PM. (#1) I can only do this while Ragnarok is open; if it is closed when the time comes, I will tell you as soon as you open it.",
+    "error": null
+  },
+  {
+    "task": "reminder in minutes",
+    "ok": true,
+    "why": null,
+    "seconds": 1.5,
+    "tools": [
+      "set_reminder"
+    ],
+    "approvals": [],
+    "trace": [
+      [
+        "set_reminder",
+        {
+          "what": "drink water",
+          "when": "in 10 minutes"
+        },
+        "Okay, I'll remind you to drink water today at 3:01 AM. (#1) I can only do this while Ragnarok is open; if it is closed when the time comes, I will tell you as s"
+      ]
+    ],
+    "answer": "Okay, I'll remind you to drink water today at 3:01 AM. (#1) I can only do this while Ragnarok is open; if it is closed when the time comes, I will tell you as soon as you open it.",
+    "error": null
+  },
+  {
+    "task": "weekday schedule",
+    "ok": true,
+    "why": null,
+    "seconds": 1.5,
+    "tools": [
+      "set_reminder"
+    ],
+    "approvals": [],
+    "trace": [
+      [
+        "set_reminder",
+        {
+          "what": "check your mail",
+          "when": "every weekday at 8"
+        },
+        "Okay, I'll remind you to check your mail every weekday at 8:00 AM. (#1) I can only do this while Ragnarok is open; if it is closed when the time comes, I will t"
+      ]
+    ],
+    "answer": "Okay, I'll remind you to check your mail every weekday at 8:00 AM. (#1) I can only do this while Ragnarok is open; if it is closed when the time comes, I will tell you as soon as you open it.",
+    "error": null
+  },
+  {
+    "task": "cancel a reminder",
+    "ok": true,
+    "why": null,
+    "seconds": 2.7,
+    "tools": [
+      "set_reminder",
+      "cancel_reminder"
+    ],
+    "approvals": [],
+    "trace": [
+      [
+        "set_reminder",
+        {
+          "what": "call mom",
+          "when": "at 6pm"
+        },
+        "Okay, I'll remind you to call mom today at 6:00 PM. (#1) I can only do this while Ragnarok is open; if it is closed when the time comes, I will tell you as soon"
+      ],
+      [
+        "cancel_reminder",
+        {
+          "id": 1
+        },
+        "Cancelled #1."
+      ]
+    ],
+    "answer": "Cancelled #1.",
+    "error": null
+  }
+]

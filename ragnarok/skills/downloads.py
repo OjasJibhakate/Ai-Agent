@@ -99,6 +99,11 @@ class DownloadError(ValueError):
 # ---- what may be fetched -------------------------------------------------------------------------
 
 
+_LOCAL_FILE_NAME = re.compile(
+    r"[^/\\:]+\.(?:pdf|docx?|pptx?|xlsx?|txt|csv|md|rtf|odt|png|jpe?g|zip)", re.IGNORECASE
+)
+
+
 def _known_name(source: str) -> str | None:
     key = re.sub(r"\s+", " ", source.strip().lower())
     key = ALIASES.get(key, key)
@@ -119,6 +124,12 @@ def resolve_source(source: str, user_text: str) -> tuple[str, str]:
             raise DownloadError(f"I only download what you ask for, and you did not mention {name}")
         return KNOWN[name].url, KNOWN[name].label
     if "://" not in source and not re.match(r"^[a-z0-9.-]+\.[a-z]{2,}/", source.lower()):
+        if _LOCAL_FILE_NAME.fullmatch(source):
+            raise DownloadError(
+                f"{source!r} is a file name, not something on the internet. If it is on this "
+                "computer (in Downloads, say), find it with find_files and read it with "
+                "read_file; do not download it."
+            )
         known = ", ".join(sorted(KNOWN))
         raise DownloadError(
             f"I have no trusted link for {source!r}. Paste its download link in your message and "
@@ -375,7 +386,8 @@ def download_tools(
             name="download_file",
             description="Download a file or program to the user's Downloads folder, given a name "
             "like steam or chrome, or a link they typed. Use it when the user asks to download "
-            "something that is not a picture.",
+            "something from the internet that is not a picture, never a file already on this "
+            "computer.",
             args_model=DownloadFileArgs,
             risk=Risk.R2,  # files from the internet: the owner is asked every time
             idempotent=False,

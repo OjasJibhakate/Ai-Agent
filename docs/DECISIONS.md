@@ -440,3 +440,37 @@ Format: context → decision → alternatives → consequences → revisit if.
   - Still plain ANSI: no new dependency (the project has no `rich`).
 - **Consequences:** The old boxed banner and the `allow? [y/N]` wording are gone; tests were updated. The welcome animation adds about 0.7 s once at start.
 - **Revisit if:** the animation feels slow on the owner's terminal (lower `pace` or drop the sweep).
+
+### D-040 - Folder-to-file summaries are one tool, not a loop of file reads
+- **Date:** 2026-10-26 - **Status:** accepted
+- **Context:** "make a ppt on this folder" and "read the pdf and files in the folder and make a new pdf" ended with "I stopped after too many steps": the model read one file per step (6 steps) and never built the file. The real-model battery reproduced it.
+- **Decision:**
+  - `summarize_files` walks a folder (or one file) in code, reads PDF/Word/PowerPoint/text, summarizes each part with small focused model calls (about 6,000 characters each, at most 24 calls per request, evenly sampled for large files), and builds the output (pdf, pptx, docx, md, txt) itself. If the model does not answer, the text is quoted instead, so a file is still made.
+  - A small PDF writer (`pdfwriter.py`) means no new dependency. The step cap is 8 and the cap message now says what ran and what failed.
+  - `create_animation` (sorting animations, steps worked out in Python) and `create_webpage` (a page the model writes, saved with a Content-Security-Policy that blocks all network requests) replace "write a Python script and pip install matplotlib".
+  - A result that leaves the turn open now tells the model it is finished, because it used to "verify" with run_command and loop.
+- **Consequences:** Folder jobs take 16-18 s on the target laptop and never run out of steps. Output files are always new files in Documents\Ragnarok.
+
+### D-041 - Passwords are never typed, and web addresses are never guessed
+- **Date:** 2026-10-26 - **Status:** accepted
+- **Context:** A user asked the agent to log in to a college site with a pasted id and password. The model invented an address (a different country's university) and typed it 15 times; the screen skill's typing guard only refused text that was labelled "password".
+- **Decision:**
+  - The screen skill refuses to type any password-shaped word (8-64 characters mixing cases, digits and a symbol) and any value the user labelled as a password, PIN, OTP, passcode or token in their message. The user logs in; the agent can then read the page.
+  - It also refuses to type a web address the user did not write.
+  - The prompt says: never guess an address (search for it or ask for the link), never log in for the user.
+  - The event scrubber also covers passcode, passphrase, PIN and OTP and the `label:- value` form, so these never reach the vault or memory.
+- **Consequences:** "Log in and check my attendance" becomes "open the site, you log in, then I read it". Tell users not to paste passwords into the chat.
+
+### D-042 - Triggers run inside the chat process, poll folders, and headless goals can only propose
+- **Date:** 2026-10-26 - **Status:** accepted
+- **Context:** FR4 needs things that start by themselves. There is no always-on daemon yet, and `watchdog` is not a dependency.
+- **Decision:**
+  - `TriggerEngine` runs as a task inside the chat. Reminders (`date`), schedules (`cron`) and folder watches fire once: the fire is written to the vault before the action, with a unique `(trigger, dedupe key)`.
+  - Downtime: a schedule that missed slots fires once (coalesced) and says it was late; a reminder that came due fires at the next start; folders are compared with a saved snapshot, and a file counts only when its size stopped changing. A fire that began but did not finish is completed (reminders) or reported as interrupted (goals), never re-run blindly.
+  - Folders are polled every 2 s in a worker thread (no new dependency).
+  - A `goal` trigger runs a headless agent in the `background` profile, which may read but not change anything; whatever it wanted to do is listed in the Inbox as "waiting for your OK". It waits while the user is mid-turn.
+  - Desktop toasts use PowerShell's WinRT API (no `windows-toasts`); the text is passed through the environment, never the command line.
+  - The tools are honest that reminders only fire while Ragnarok is open.
+- **Alternatives:** `watchdog` (a dependency; revisit when the daemon exists), a Task Scheduler service now (needs the daemon first).
+- **Consequences:** FR4.1 works in the chat session; true always-on needs the daemon (not built).
+- **Revisit if:** the daemon is built: move the engine into it unchanged.

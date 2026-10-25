@@ -606,7 +606,8 @@ def file_tools(
         Tool(
             name="read_file",
             description="Read a text file, PDF, Word or PowerPoint document (notes, code, csv, "
-            "reports). Use it when the user asks what a file says.",
+            "reports). Use it when the user asks what a file says, or to summarize, explain or "
+            "read one file; the answer goes in the chat.",
             args_model=ReadFileArgs,
             timeout_s=10,
             handler=read_file,

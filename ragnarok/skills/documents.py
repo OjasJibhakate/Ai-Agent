@@ -213,6 +213,11 @@ def document_tools(documents: Path | None = None) -> list[Tool]:
             slides = parse_outline(args.outline)
         except ValueError as exc:
             return f"error: {exc}"
+        if len(slides) == 1 and len(slides[0].bullets) > 4:
+            return (
+                "error: the outline is one slide with many points. Give every slide its own "
+                "'# Slide title' line followed by its '- point' lines (about 5 slides)."
+            )
         data = await asyncio.to_thread(build_pptx, args.title, args.subtitle or "", slides)
         count = len(slides) + (
             0 if slides[0].title.strip().lower() in ("title", args.title.lower()) else 1

@@ -546,3 +546,31 @@ Variety and follow-up robustness, `open_path` ("open the ppt you made"), latency
 ### Not done / not verified
 - Not yet looked at in the owner's real terminal; timings of the animation (about 0.7 s at start) are by design, not measured on screen.
 - `/clear` and mode changes have no transition yet.
+
+## 2026-10-26 (afternoon) - three failures from real use, and a password in the chat
+
+### Reported by the owner (pasted sessions)
+1. "make me a ppt on <folder> ... 10 slides": run_command, Get-ChildItem, read_file, extract_text... then "I stopped after too many steps".
+2. "make me a animation for bubble sort": six run_command attempts (python script, pip install matplotlib), no answer printed.
+3. "read the pdf and files in the image processing folder and make a new pdf with summary of all": list_folder, read_file x5, step cap.
+4. A login request with a pasted id and password: the agent invented an address (a Singapore university) and typed it 15 times.
+
+### Built (D-040, D-041)
+- `skills/digest.py` (`summarize_files`), `skills/pdfwriter.py`, `skills/webpage.py` (`create_animation`, `create_webpage`), step cap 8 with an explanatory message, a `on_tool` hook so the spinner shows while tools run after streamed text, the permission card on its own line, grouped footer, password and address guards in `skills/screen/input.py`, wider secret scrubbing in `memory/store.py`.
+- Routing fixes found by the battery: `download_file` rejects a bare file name ("it is a file name, find it and read it"); `create_presentation` rejects an outline that puts everything on one slide; tool descriptions for read_file, download_file, summarize_files tightened.
+- Tests: **1236 pass** (was 1047), ruff clean. New: PDF writer read back with pypdf, folder summaries (formats, slide counts, large files, model down, hostile file text, off-limit paths, repeat runs, stale .part), animation steps replayed for five algorithms on random inputs, page lockdown, chat flow around cards/spinner/step cap, credential and address guards.
+
+### Measured (real model, `bench/daily_tasks.py`, 64 tasks)
+- The three owner scenarios: folder to 10-slide ppt 17 s, folder to PDF 16 s, bubble sort animation 1.4 s - all pass, repeatedly. Login request: declines to log in, asks for the link (3/3).
+- Found by the battery and fixed: 10 "failures" were my new fixture files being picked up by old checkers (test input now excluded); "summarize the pdf in my downloads" went to download_file (message fix); "ppt on climate change" made 1 slide (tool now sends the outline back).
+- Known not working: "remind me to call mom at 6pm" (triggers not built).
+
+### Not done / not verified
+- The screen skill has not been run against a real login page; the typing guards are unit-tested only.
+- Folder summaries were tried on a made-up "image processing" folder, not the owner's real one.
+
+### 2026-10-26 (evening) - triggers (FR4) built (D-042)
+- Built: `triggers/engine.py` (time, cron, folder, recovery, headless goals), `triggers/tools.py` (`set_reminder`, `schedule_task`, `watch_folder`, `list_reminders`, `cancel_reminder`), `triggers/toast.py`, chat wiring (`/inbox`, `/reminders`, `/cancel N`, live alerts, unread notice at start), and the `background` profile may now read.
+- Tests: **1265 pass**, ruff clean. New: 24 engine/tool tests on a fake clock (once-only, crash between fire record and message, late reminders, coalesced schedules, restart without repeats, folder debounce/temp files/changes/downtime/flood, goals failing or interrupted, pause) and 5 chat tests.
+- Real model (battery, now 68 tasks): reminder at a time, reminder in minutes, weekday schedule and cancel all pass (4/4). Full battery before this change: 61/64 (the three failures were two model-variance cases, 7 slides instead of 8 and a summary through extract_text, and the reminder that is now fixed).
+- Not done: an always-on daemon (reminders only fire while the chat is open), mail and calendar triggers, proactive suggestions (FR4.2), approving a proposed action from the Inbox in one step.

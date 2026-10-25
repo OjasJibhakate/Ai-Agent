@@ -77,7 +77,8 @@ PROFILES: dict[str, Profile] = {
     "background": Profile(
         "background",
         "read-only",
-        frozenset({"memory_search"}),
+        # reading is allowed (ARCHITECTURE 9.1); everything else waits for the owner
+        frozenset({"memory_search", "find_files", "list_folder", "read_file", "list_reminders"}),
         frozenset({"*"}),
         frozenset(),
         "ask",

@@ -37,7 +37,7 @@ from ragnarok.runtime.tools import (
     memory_tools,
 )
 
-MAX_STEPS = 6  # model calls per user turn
+MAX_STEPS = 8  # model calls per user turn
 LOG_RESULT_CHARS = 300  # the event log keeps a short record, not whole files
 LOOP_GUARD = 3  # the same call with the same arguments this many times stops the turn
 
@@ -95,6 +95,7 @@ class Agent:
         approve: Approver | None = None,
         tools: list[Tool] | None = None,
         fast_finish: bool = True,
+        on_tool: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         self.store = store
         self.svc = svc
@@ -105,6 +106,7 @@ class Agent:
         self.profile = ProfileCache(store)
         self.current: TurnResult | None = None  # the turn in progress, for screens to inspect
         self.fast_finish = fast_finish  # end the turn on a tool's final answer (no 2nd model call)
+        self.on_tool = on_tool  # told when an allowed tool is about to run (the screen shows it)
 
     async def turn(
         self,
@@ -175,7 +177,7 @@ class Agent:
                 break
         else:
             result.stopped = "step-cap"
-            result.text = result.text or "I stopped after too many steps."
+            result.text = result.text or _cap_message(result.trace)
 
         await self._log(session, "assistant_message", result.text)
         session.history += [
@@ -213,6 +215,8 @@ class Agent:
             result.trace.append(ToolTrace(name, clean, decision.rule, False, "denied"))
             return f"error: denied by rule {decision.rule}", False
 
+        if self.on_tool is not None:
+            await self.on_tool(name)
         # log before acting: the call is durable before any side effect happens
         await self._log(
             session, "memory_tool_call", _event(name, clean, parsed.reason, decision, "started")
@@ -257,6 +261,18 @@ class Agent:
             session_id=session.id,
             dedupe_seconds=dedupe,
         )
+
+
+def _cap_message(trace: list[ToolTrace]) -> str:
+    """What to tell the user when the step limit ends a turn: what ran, and how to go on."""
+    used = Counter(t.tool for t in trace if t.allowed)
+    failed = sum(1 for t in trace if t.allowed and t.result.startswith("error"))
+    parts = ["I ran out of steps before finishing."]
+    if used:
+        ran = ", ".join(f"{name} x{n}" if n > 1 else name for name, n in used.items())
+        parts.append(f"I ran: {ran}" + (f" ({failed} failed)." if failed else "."))
+    parts.append("Tell me to continue, or give me a narrower request.")
+    return " ".join(parts)
 
 
 def _parse_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
