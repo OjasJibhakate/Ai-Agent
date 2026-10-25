@@ -1,0 +1,17 @@
+# Runtime data and secrets never go in the repo
+data/
+*.db
+*.db-wal
+*.db-shm
+key.json
+key.dpapi
+logs/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+node_modules/
+ragnarok/ui_dist/
+.env
+bench/results/*.tmp
