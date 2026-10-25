@@ -338,6 +338,16 @@ def cmd_memory(args: argparse.Namespace) -> int:
 
 def cmd_gui(args: argparse.Namespace) -> int:
     ui = Console()
+    if args.command:
+        from ragnarok.gui import startup
+
+        if args.command == "on":
+            startup.install_command()
+            note = "" if startup.on_path() else " (add that folder to your PATH first)"
+            ui.success(f"Type meow anywhere to call the cat{note}.")
+        else:
+            ui.success(f"Removed {startup.remove_command()} files.")
+        return 0
     if args.startup:
         from ragnarok.gui import startup
 
@@ -476,6 +486,11 @@ def build_parser() -> argparse.ArgumentParser:
     gui = sub.add_parser("gui", help="the pixel cat on your taskbar (click it to chat)")
     gui.add_argument(
         "--startup", choices=["on", "off"], help="start the cat when you log in to Windows (or not)"
+    )
+    gui.add_argument(
+        "--command",
+        choices=["on", "off"],
+        help="add (or remove) the short command: meow",
     )
     gui.set_defaults(run=cmd_gui)
     return p

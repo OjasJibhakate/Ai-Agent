@@ -598,3 +598,7 @@ Variety and follow-up robustness, `open_path` ("open the ppt you made"), latency
 ### Not done / not verified
 - Not yet used by the owner with their real vault (all live tests used a throwaway one). Recovery work (kill-and-resume bench) is paused for this.
 - One monitor only; a taskbar on the left, right or top is not specially handled.
+
+### 2026-10-26 (late night) - one short command: meow
+- Owner: "i don't want to run this whole command i want just one short command". `rag gui --command on` writes `meow.cmd` and `meow.vbs` to `%LOCALAPPDATA%\Microsoft\WindowsApps` (already on the PATH). Checked live from a fresh PowerShell: `meow` starts the cat with no console window left behind; a second `meow` opened the running cat's chat and did not start a second cat.
+- Tests: **1386 pass** (new: the command files, removal, PATH check, the summon event).

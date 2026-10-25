@@ -66,3 +66,30 @@ def only_one_copy(name: str = "Local\\RagnarokCat") -> bool:
     already = ctypes.windll.kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
     only_one_copy.handle = handle  # type: ignore[attr-defined]  # kept alive for the whole run
     return not already
+
+
+SUMMON_NAME = "Local\\RagnarokCatSummon"
+
+
+def summon(name: str = SUMMON_NAME) -> None:
+    """Tell the cat that is already running to open its chat (what a second launch does)."""
+    if sys.platform != "win32":
+        return
+    kernel = ctypes.windll.kernel32
+    event = kernel.CreateEventW(None, False, False, name)
+    kernel.SetEvent(event)
+    kernel.CloseHandle(event)
+
+
+class Summons:
+    """Listens for `summon()`: the running cat asks `pending()` every frame."""
+
+    def __init__(self, name: str = SUMMON_NAME) -> None:
+        self.handle = (
+            ctypes.windll.kernel32.CreateEventW(None, False, False, name)
+            if sys.platform == "win32"
+            else None
+        )
+
+    def pending(self) -> bool:
+        return bool(self.handle) and ctypes.windll.kernel32.WaitForSingleObject(self.handle, 0) == 0

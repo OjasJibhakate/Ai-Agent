@@ -38,3 +38,43 @@ def test_the_command_line_switches_it(monkeypatch, tmp_path, capsys, flag):
     assert startup.installed() is (flag == "on")
     out = capsys.readouterr().out
     assert ("cat will appear" in out) if flag == "on" else ("not set to start" in out)
+
+
+# ---- the short command ---------------------------------------------------------------------------
+
+
+def test_meow_is_a_cmd_file_that_runs_the_hidden_launcher_next_to_it(tmp_path):
+    written = startup.install_command(tmp_path, project=tmp_path / "Ai-Agent", uv="uv")
+    cmd, vbs = tmp_path / "meow.cmd", tmp_path / "meow.vbs"
+    assert written == [cmd, vbs]
+    assert cmd.read_bytes() == b'@echo off\r\nwscript.exe //nologo "%~dp0meow.vbs"\r\n'
+    assert "run pythonw -m ragnarok gui" in vbs.read_text() and ", 0, False" in vbs.read_text()
+
+
+def test_meow_can_be_removed_and_nothing_else_is_touched(tmp_path):
+    other = tmp_path / "other.cmd"
+    other.write_text("x")
+    startup.install_command(tmp_path, uv="uv")
+    assert startup.remove_command(tmp_path) == 2
+    assert startup.remove_command(tmp_path) == 0
+    assert other.read_text() == "x" and not (tmp_path / "meow.cmd").exists()
+
+
+def test_the_command_goes_in_a_folder_that_is_already_on_the_path(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    folder = startup.command_folder()
+    assert folder == tmp_path / "Microsoft" / "WindowsApps"
+    monkeypatch.setenv("PATH", rf"C:\Windows;{folder}")
+    assert startup.on_path()
+    monkeypatch.setenv("PATH", r"C:\Windows")
+    assert not startup.on_path()
+
+
+@pytest.mark.parametrize("flag", ["on", "off"])
+def test_the_command_line_installs_and_removes_meow(monkeypatch, tmp_path, capsys, flag):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    startup.install_command()  # so that "off" has something to remove
+    assert cli.main(["gui", "--command", flag]) == 0
+    out = capsys.readouterr().out
+    assert (tmp_path / "Microsoft" / "WindowsApps" / "meow.cmd").exists() is (flag == "on")
+    assert ("Type meow anywhere" in out) if flag == "on" else ("Removed 2 files" in out)

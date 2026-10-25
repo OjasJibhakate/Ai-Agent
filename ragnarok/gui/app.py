@@ -105,6 +105,7 @@ class CatApp:
         self.menu.add_separator()
         self.menu.add_command(label="Quit Ragnarok", command=self.quit)
 
+        self.summons = winapi.Summons()  # a second launch asks this copy to open the chat
         self._shown = ("", 0)
         self._last_geo = (-1, -1)
         self._last_tick = time.monotonic()
@@ -184,6 +185,8 @@ class CatApp:
         self._carry_the_chat(pose.mode)
         for kind, data in self.bridge.drain():
             self._event(kind, data)
+        if self.summons.pending():
+            self.open_chat()
         self._slow += dt
         if self._slow >= 0.4:
             self._slow = 0.0
@@ -271,7 +274,8 @@ class CatApp:
 def main() -> int:
     winapi.make_dpi_aware()
     if not winapi.only_one_copy():
-        return 0  # the cat is already here
+        winapi.summon()  # the cat is already here: ask it to open the chat
+        return 0
     from ragnarok.cli import home_dir
 
     root = tk.Tk()
