@@ -40,7 +40,7 @@ Models must show `100% GPU` in `ollama ps`. Keep the laptop in hybrid (Optimus) 
 - **Python:** 3.12 via uv. Don't use the Microsoft Store Python 3.13.
 - **Runtime:** asyncio · Starlette/FastAPI + WebSocket JSON-RPC · httpx
 - **Storage:** `sqlcipher3` (SQLCipher + FTS5) · numpy
-- **Windows integration:** `pywin32` (sandbox tokens, Job Objects, DPAPI) · `argon2-cffi` + `cryptography` (key wrapping) · `keyring` · `pystray` · `windows-toasts`
+- **Windows integration:** `pywin32` (DPAPI now; sandbox tokens and Job Objects later) · `argon2-cffi` + `cryptography` (key wrapping, installed) · `keyring` · `pystray` · `windows-toasts` (the last three not installed yet)
 - **Tools and triggers:** `mcp` · `watchdog`
 - **CLI:** Typer + Rich
 - **UI:** React + Vite + Tailwind

@@ -209,3 +209,17 @@ Format: context → decision → alternatives → consequences → revisit if.
 - **Context:** The memory service is async. `pytest-asyncio` would be a new dependency, and the project rules say to ask before adding one.
 - **Decision:** `tests/conftest.py` runs `async def` tests with `asyncio.run`. Fixtures stay synchronous.
 - **Revisit if:** we need async fixtures or shared event loops; then ask to add `pytest-asyncio`.
+
+### D-025 — Key wrapping implemented; dependencies approved
+- **Date:** 2026-10-25 · **Status:** accepted (implements D-006, resolves the "revisit if" in D-022)
+- **Context:** The team lead approved adding `argon2-cffi`, `cryptography` and `pywin32` (asked per the project rules).
+- **Decision:** `ragnarok/vault/keys.py`:
+  - a random 256-bit vault key, never stored in plaintext;
+  - passphrase wrap = Argon2id (time 6, 256 MiB, 4 lanes, about 0.4 s measured) + AES-256-GCM;
+  - recovery wrap = HKDF-SHA256 of a one-time 160-bit code + AES-256-GCM;
+  - each wrap's AAD names its purpose, so a wrap can't be moved to the other slot;
+  - changing or resetting the passphrase re-wraps the key without touching the vault file;
+  - opt-in DPAPI copy (current Windows user, fixed entropy string).
+  `key.json` stores the KDF parameters, so cost can be raised later without breaking old keystores.
+- **Consequences:** `keyring` (Credential Manager for account secrets) is not added yet, since no account secrets exist.
+  DPAPI means anyone logged in as the user can unlock, as stated in the threat model (ARCHITECTURE 6.3).

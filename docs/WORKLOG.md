@@ -255,3 +255,16 @@ D-020 (store the Turbovec index as bytes inside the vault) and D-021 (start Olla
 1. `bench/retrieval_bench.py`: 500 synthetic memories + 100 labelled queries with real `nomic-embed-text` vectors; recall@5, MRR, p50/p95 for FTS-only,
    vector-only, hybrid, hybrid+rerank, and Turbovec vs exact at 4-bit.
 2. M3: extraction and ADD/UPDATE/SUPERSEDE/NOOP with provenance and the 14-day timeline test.
+
+## 2026-10-25 (late night) - key wrapping (D-025)
+
+- Dependencies approved and added: `argon2-cffi` 25.1.0, `cryptography` 50.0.2, `pywin32` 312 (`uv.lock` updated).
+- `ragnarok/vault/keys.py` + `tests/test_m1_keys.py` (14 tests): passphrase and recovery unlock, wrong secret fails, recovery code tolerates
+  case/spacing, `key.json` contains neither key, passphrase nor code, change/reset passphrase keeps the same key, tampered or swapped wraps fail closed,
+  a derived key opens a real vault, DPAPI round trip and damaged blob. **66 tests pass**, `ruff` clean.
+- **Argon2id tuning (measured, 3 runs median):** t=3/64 MiB 0.07 s; t=3/128 MiB 0.10 s; t=3/256 MiB 0.26 s; t=6/256 MiB 0.38 s.
+  My first default (t=3, 64 MiB) was only about 0.1 s, well under the 0.5 s target, so I raised it to t=6, 256 MiB. The 256 MiB is allocated only while unlocking.
+- Not done: wiring the keystore into a `rag` command (first-run setup flow, showing the recovery code once), and `keyring` for account secrets.
+
+### Next
+Retrieval benchmark with real embeddings (500 memories, 100 labelled queries), then M3.
