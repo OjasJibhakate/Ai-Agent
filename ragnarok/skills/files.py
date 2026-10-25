@@ -22,9 +22,12 @@ from pathlib import Path
 
 from pydantic import Field
 
+from ragnarok.policy.modes import Mode
 from ragnarok.policy.permissions import Risk
 from ragnarok.runtime.tools import CURRENT_TEXT, Tool, ToolArgs, ToolResult
+from ragnarok.skills.extract import DOCUMENT_EXT, ExtractError, text_of
 from ragnarok.skills.folders import known_folder
+from ragnarok.skills.pathguard import DENY, PROFILE_PRIVATE, PathGuard
 
 ROOT_NAMES = ("Desktop", "Documents", "Downloads")
 MAX_DEPTH = 6
@@ -47,12 +50,6 @@ TEXT_EXT = {
     ".json", ".csv", ".html", ".css", ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".log",
     ".sql", ".sh", ".bat", ".ps1", ".go", ".rs", ".kt", ".rb", ".php", ".tex", ".rst",
 }  # fmt: skip
-# Never listed, searched or read: keys, password stores, credentials, environment files.
-DENY = re.compile(
-    r"(\.kdbx?$|\.pem$|\.key$|\.pfx$|\.p12$|\.ppk$|^id_(rsa|dsa|ecdsa|ed25519)|^\.env($|\.)|"
-    r"password|passwd|credential|secret|\.ssh$|\.aws$|\.gnupg$|private[_ -]?key|token)",
-    re.IGNORECASE,
-)
 STOPWORDS = {
     "a", "an", "the", "any", "my", "me", "i", "is", "are", "there", "do", "have", "of", "to", "for",
     "with", "about", "on", "in", "file", "files", "folder", "folders", "related", "relating",
@@ -121,12 +118,30 @@ class Hit:
     snippet: str = ""
 
 
+class AmbiguousName(ValueError):
+    """A name matches more than one file or folder."""
+
+
 class FileAccess:
     """What may be touched, and how it is shown."""
 
-    def __init__(self, roots: list[Path], home: Path | None = None) -> None:
-        self.roots = [r.resolve() for r in roots]
+    def __init__(
+        self,
+        roots: list[Path],
+        home: Path | None = None,
+        mode: Mode | None = None,
+        data_dirs: list[Path] | None = None,
+    ) -> None:
+        self.base_roots = [r.resolve() for r in roots]
         self.home = (home or Path.home()).resolve()
+        self.mode = mode
+        # a test home has no vault; the real one is found from the environment
+        self.guard = PathGuard(self.home, data_dirs if home is None or data_dirs else [])
+
+    @property
+    def roots(self) -> list[Path]:
+        """Desktop, Documents and Downloads; the whole profile folder in the wider modes."""
+        return [self.home] if self.mode is not None and self.mode.wide else self.base_roots
 
     def display(self, path: Path) -> str:
         try:
@@ -136,7 +151,9 @@ class FileAccess:
 
     def allowed(self, path: Path) -> bool:
         real = path.resolve()
-        return any(real == r or r in real.parents for r in self.roots)
+        if not any(real == r or r in real.parents for r in self.roots):
+            return False
+        return self.guard.protected_reason(real) is None  # the vault, AppData, system folders ...
 
     @staticmethod
     def denied(path: Path) -> bool:
@@ -144,8 +161,7 @@ class FileAccess:
 
     def resolve(self, text: str) -> Path:
         """Turn what the model typed into a safe absolute path, or raise ValueError."""
-        raw = Path(text.strip().strip('"'))
-        path = raw if raw.is_absolute() else self.home / raw
+        path = self.guard.resolve(text)  # stand-in user names, Desktop/..., ~ and %USERPROFILE%
         if not self.allowed(path):
             raise ValueError(
                 "that path is outside the folders I may look in (Desktop, Documents, Downloads)"
@@ -154,11 +170,45 @@ class FileAccess:
             raise ValueError("that file may hold secrets, so I don't open it")
         return path.resolve()
 
+    def locate(self, text: str) -> Path:
+        """Like `resolve`, but a name the user spoke ("notes.txt", "Reports/a.pdf") is looked for
+        in Desktop, Documents, Downloads and the profile folder when it is not where it was written.
+
+        One match is used; several are an error that lists them, so nothing is guessed.
+        """
+        rel = text.strip().strip('"').strip("'")
+        absolute_like = bool(re.match(r"^(?:[a-zA-Z]:|[\\/]|~|%|\$)", rel))
+        error: ValueError | None = None
+        try:
+            path = self.resolve(text)
+            if path.exists() or absolute_like:
+                return path
+        except ValueError as exc:
+            if absolute_like:
+                raise
+            path, error = None, exc  # a bare name may still be found in the usual folders
+        seen: set[Path] = set()
+        for root in [*self.base_roots, self.home]:
+            try:
+                found = (root / rel).resolve()
+            except (OSError, ValueError):
+                continue
+            if found.exists() and self.allowed(found) and not self.denied(found):
+                seen.add(found)
+        if len(seen) > 1:
+            where = "; ".join(sorted(self.display(p) for p in seen))
+            raise AmbiguousName(f"{rel!r} is in more than one place ({where}); say which one")
+        if seen:
+            return next(iter(seen))
+        if error is not None:
+            raise error
+        return path  # type: ignore[return-value]
+
     def roots_for(self, folder: str) -> list[Path]:
         name = folder.strip().lower()
         if name in ("", "all", "everywhere", "anywhere"):
             return self.roots
-        named = [r for r in self.roots if r.name.lower() == name]
+        named = [r for r in self.base_roots if r.name.lower() == name]
         if named:
             return named
         if not re.search(r"[\/:]", name):  # a plain name like "deep learning", not a path
@@ -213,6 +263,8 @@ class FileAccess:
                     name = entry.name
                     if name.startswith(".") or DENY.search(name) or self._hidden(entry):
                         continue
+                    if depth == 0 and root == self.home and name.lower() in PROFILE_PRIVATE:
+                        continue  # AppData and friends: never searched, even in the wide modes
                     is_dir = entry.is_dir(follow_symlinks=False)
                     yield entry, is_dir
                     if is_dir and depth < MAX_DEPTH and name.lower() not in SKIP_DIRS:
@@ -375,9 +427,11 @@ class ReadFileArgs(ToolArgs):
     offset: int = Field(default=0, ge=0, description="Start reading at this character.")
 
 
-def file_tools(roots: list[Path] | None = None, home: Path | None = None) -> list[Tool]:
-    access = FileAccess(roots if roots is not None else default_roots(home), home)
-    root_list = [str(r) for r in access.roots]
+def file_tools(
+    roots: list[Path] | None = None, home: Path | None = None, mode: Mode | None = None
+) -> list[Tool]:
+    access = FileAccess(roots if roots is not None else default_roots(home), home, mode)
+    root_list = [str(r) for r in access.base_roots]
 
     def _find(args: FindFilesArgs) -> str:
         try:
@@ -425,25 +479,32 @@ def file_tools(roots: list[Path] | None = None, home: Path | None = None) -> lis
 
     def _read(args: ReadFileArgs) -> str:
         try:
-            path = access.resolve(args.path)
+            path = access.locate(args.path)
         except ValueError as exc:
             return f"error: {exc}"
         if not path.is_file():
             return "error: no such file"
-        if path.suffix.lower() not in TEXT_EXT:
+        suffix = path.suffix.lower()
+        if suffix in DOCUMENT_EXT:
+            try:
+                text = text_of(path)
+            except ExtractError as exc:
+                return f"error: {exc}"
+        elif suffix not in TEXT_EXT:
             return (
-                f"error: I can only read plain-text files for now ({path.suffix or 'this type'} "
+                f"error: I can read text, PDF, Word and PowerPoint files ({suffix or 'this type'} "
                 "is not supported yet), but I can tell you where it is."
             )
-        try:
-            if path.stat().st_size > 5_000_000:
-                return "error: that file is too large to read"
-            raw = path.read_bytes()
-        except OSError:
-            return "error: could not read that file"
-        if b"\x00" in raw[:2048]:
-            return "error: that looks like a binary file"
-        text = raw.decode("utf-8", errors="replace")
+        else:
+            try:
+                if path.stat().st_size > 5_000_000:
+                    return "error: that file is too large to read"
+                raw = path.read_bytes()
+            except OSError:
+                return "error: could not read that file"
+            if b"\x00" in raw[:2048]:
+                return "error: that looks like a binary file"
+            text = raw.decode("utf-8", errors="replace")
         chunk = text[args.offset : args.offset + READ_CHARS]
         if not chunk:
             return f"error: the file has only {len(text)} characters"
@@ -492,8 +553,8 @@ def file_tools(roots: list[Path] | None = None, home: Path | None = None) -> lis
         ),
         Tool(
             name="read_file",
-            description="Read a plain-text file (notes, code, csv, markdown) from those folders. "
-            "Use it when the user asks what a file says.",
+            description="Read a text file, PDF, Word or PowerPoint document (notes, code, csv, "
+            "reports). Use it when the user asks what a file says.",
             args_model=ReadFileArgs,
             timeout_s=10,
             handler=read_file,

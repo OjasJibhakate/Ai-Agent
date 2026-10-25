@@ -251,8 +251,11 @@ async def test_instructions_inside_a_file_stay_inside_the_data_tags(tools, home)
 
 
 async def test_unsupported_and_binary_files_are_explained(tools):
-    out = await run(tools, "read_file", path="Desktop/Data_structure_certificate.pdf")
-    assert "can only read plain-text" in out and ".pdf" in out
+    out = await run(tools, "read_file", path="Downloads/setup.exe")
+    assert "can read text, PDF, Word and PowerPoint" in out and ".exe" in out
+    # a PDF is now read; one that is not really a PDF is reported, not crashed on
+    fake = await run(tools, "read_file", path="Desktop/Data_structure_certificate.pdf")
+    assert fake.startswith("error:") and "PDF" in fake
     assert "no such file" in await run(tools, "read_file", path="Desktop/missing.txt")
 
 

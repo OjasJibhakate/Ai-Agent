@@ -27,6 +27,8 @@ class Profile:
     ask: frozenset[str]
     deny: frozenset[str]
     r1: Literal["allow", "ask"]  # default for R1 tools
+    r2: Literal["allow", "ask"] = "ask"  # external or hard to undo
+    r3: Literal["allow", "ask"] = "ask"  # destructive
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,30 @@ PROFILES: dict[str, Profile] = {
         frozenset(),
         frozenset(),
         "allow",
+    ),
+    # The owner at the keyboard, with the permission modes of Claude Code (the chat's /mode):
+    #   "interactive" (ask)  R0/R1 run; R2 and R3 ask every time
+    #   "edits"              R0-R2 run (move, overwrite, download); only R3 (delete, commands) asks
+    #   "full"               nothing asks; the hard limits in each tool (vault, system folders,
+    #                        destructive commands) still apply. Moving the real mouse always asks.
+    "edits": Profile(
+        "edits",
+        "workspace-write",
+        frozenset({"memory_search"}),
+        frozenset(),
+        frozenset(),
+        "allow",
+        r2="allow",
+    ),
+    "full": Profile(
+        "full",
+        "full-access",
+        frozenset({"memory_search"}),
+        frozenset({"use_computer"}),
+        frozenset(),
+        "allow",
+        r2="allow",
+        r3="allow",
     ),
     # triggers and headless runs: never prompts mid-run, so anything with a side effect waits
     "background": Profile(
@@ -90,4 +116,7 @@ def check(profile: str, tool_name: str, risk: Risk) -> Decision:
         if p.r1 == "allow":
             return Decision(True, False, "default:R1", "local reversible write")
         return Decision(False, True, "default:R1", "writes need approval in this profile")
+    setting = p.r2 if risk is Risk.R2 else p.r3
+    if setting == "allow":
+        return Decision(True, False, f"default:{risk.value}", f"{risk.value} runs in this mode")
     return Decision(False, True, f"default:{risk.value}", "external or destructive: ask every time")

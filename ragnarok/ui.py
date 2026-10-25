@@ -256,6 +256,7 @@ class Console:
             ("/memories", "what I remember about you"),
             ("/profile", "what is always in my prompt"),
             ("/forget N", "delete memory N for good"),
+            ("/mode M", "ask, edits or full: how much I do without asking"),
             ("/clear", "clear the screen"),
             ("/quit", "leave (I keep learning from this chat)"),
         ]

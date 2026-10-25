@@ -11,7 +11,7 @@ Project rules for contributors and coding agents: [`AGENTS.md`](AGENTS.md).
 
 Target machine: HP OMEN 16, i5-13420H, 16 GB RAM, RTX 4050 6 GB, Windows 11, no WSL or Docker.
 
-*Last updated: 2026-10-25 22:15 IST (UTC+05:30).*
+*Last updated: 2026-10-26 00:40 IST (UTC+05:30).*
 
 ---
 
@@ -74,8 +74,9 @@ Times are commit times (IST). Details and numbers for each line are in the work 
 | 2026-10-25 20:10 | `open_website`: "open chrome and go to yt and search ..." now works (sites and searches in the browser you name; hostile addresses refused; multi-step requests no longer cut short) | `8412f03` |
 | 2026-10-25 21:40 | **Screen skill (experimental):** `read_screen` (answers questions about what is on the screen) and `use_computer` (mouse and keyboard, asks first, Esc or mouse move stops it, never types into a terminal). Live test on a small test window: **5 of 15 tasks succeeded**; reading is solid, acting is not yet (D-035) | `048167a` |
 | 2026-10-25 22:15 | **Downloads and documents:** `download cat images` saves real photos (Wikimedia Commons, with credits); `download steam` / `chrome` / `vscode` ... or a link you type saves the file to `Downloads\Ragnarok` (asks first, never runs it, refuses private addresses and web pages); `make a doc file for them` creates a Word document; folders can be named in words (D-036, D-037). Checked on the real internet and in real Word | `b92bc9c` |
+| 2026-10-26 00:40 | **Day-to-day work:** permission modes (`/mode`: ask, edits or full), make/copy/move/edit/delete files and folders (Recycle Bin only), turn a PDF into a txt, make a program, a Word document, a PowerPoint or an Excel sheet, run a PowerShell command. 26 everyday requests on the real model: **25 pass** (D-038) | next commit |
 
-763 tests pass and `ruff` is clean as of the last commit.
+981 tests pass and `ruff` is clean as of the last commit.
 
 ### Remaining
 

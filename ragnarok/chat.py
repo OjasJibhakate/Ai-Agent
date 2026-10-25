@@ -21,6 +21,7 @@ import httpx
 from ragnarok.memory.ingest import Ingestor
 from ragnarok.memory.service import MemoryService
 from ragnarok.memory.store import MemoryStore
+from ragnarok.policy.modes import MODES, SUMMARY, Mode
 from ragnarok.policy.permissions import Decision
 from ragnarok.runtime.gateway import CHAT_MODEL, OLLAMA_URL, Gateway
 from ragnarok.runtime.loop import Agent, Session
@@ -28,9 +29,11 @@ from ragnarok.runtime.tools import PROGRESS, Tool, memory_tools
 from ragnarok.skills.apps import WindowsApps, app_tools
 from ragnarok.skills.documents import document_tools
 from ragnarok.skills.downloads import download_tools
+from ragnarok.skills.fileops import file_op_tools
 from ragnarok.skills.files import file_tools
 from ragnarok.skills.images import image_tools
 from ragnarok.skills.screen.tools import screen_tools
+from ragnarok.skills.shell import shell_tools
 from ragnarok.skills.web import web_tools
 from ragnarok.ui import Console, Welcome
 
@@ -107,8 +110,10 @@ class ChatApp:
         tools: list[Tool] | None = None,
         learn_delay: float | None = None,
         maintenance: Callable[[], Awaitable[object]] | None = None,
+        mode: Mode | None = None,
     ) -> None:
         self.rt = rt
+        self.mode = mode or Mode.from_env(os.environ.get("RAGNAROK_MODE"))
         self.c = console
         self.folder = folder
         self.read_line = read_line
@@ -118,7 +123,9 @@ class ChatApp:
             tools = (
                 memory_tools(rt.svc, rt.ingestor)
                 + app_tools(self._catalog)
-                + file_tools()
+                + file_tools(mode=self.mode)
+                + file_op_tools(mode=self.mode)
+                + shell_tools()
                 + web_tools()
                 + document_tools()
                 + (
@@ -129,7 +136,13 @@ class ChatApp:
                 + ([] if os.environ.get("RAGNAROK_NO_SCREEN") == "1" else screen_tools(rt.gateway))
             )
         self.agent = Agent(
-            rt.store, rt.svc, rt.ingestor, rt.gateway, approve=self._approve, tools=tools
+            rt.store,
+            rt.svc,
+            rt.ingestor,
+            rt.gateway,
+            profile=self.mode.profile,
+            approve=self._approve,
+            tools=tools,
         )
         self.session = Session()
         self.learner = BackgroundLearner(
@@ -177,6 +190,8 @@ class ChatApp:
         count = await asyncio.to_thread(self.rt.store.count)
         gpu = await gpu_status()
         self.c.banner(Welcome(CHAT_MODEL, count, gpu, self.folder, first_run=count == 0))
+        if self.mode.name != "ask":
+            self.c.notice(f"Mode: {self.mode.name} - {SUMMARY[self.mode.name]}. /mode changes it.")
         self.learner.schedule()  # catch up on earlier conversations while the user reads
 
         try:
@@ -264,9 +279,31 @@ class ChatApp:
                 self.c.error("No such memory.")
         elif cmd == "/clear":
             self.c.clear()
+        elif cmd == "/mode":
+            self._mode_command(arg.strip())
         else:
             self.c.error(f"Unknown command {cmd}. Try /help.")
         return False
+
+    def _mode_command(self, wanted: str) -> None:
+        if not wanted:
+            self.c.write()
+            self.c.section(f"Mode: {self.mode.name}")
+            for name in MODES:
+                marker = self.c.good("*") if name == self.mode.name else " "
+                self.c.write(
+                    f"   {marker} {self.c.sky(f'{name:<6}')} {self.c.faint(SUMMARY[name])}"
+                )
+            self.c.write()
+            self.c.notice("Change it with /mode ask, /mode edits or /mode full.")
+            return
+        try:
+            self.mode.set(wanted)
+        except ValueError as exc:
+            self.c.error(str(exc))
+            return
+        self.agent.profile_name = self.mode.profile
+        self.c.success(f"Mode is now {self.mode.name}: {SUMMARY[self.mode.name]}.")
 
     async def _goodbye(self) -> None:
         pending = await asyncio.to_thread(self.rt.store.pending_events, 1)

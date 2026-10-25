@@ -505,3 +505,24 @@ Use it for a few days (`memory stats` shows what is happening); then a held-out 
 - No search for arbitrary files (only named installers, typed links and Commons pictures); no resume of an interrupted download (it restarts); DNS rebinding not closed (D-036).
 - The 10 installer links are fixed in code and will go stale; the Python entry is pinned to 3.12.8, not "latest".
 - Not tried in the owner's own `chat` window. The screen-task path that "make a doc file" used to fall back on is now unnecessary for that request, but is still 5/15 on the test window (D-035).
+
+## 2026-10-26 - "give it all the permissions ... do what Claude Code can do", "make a program / ppt", "6 hours left"
+
+### Built (D-038)
+- `policy/modes.py` (ask / edits / full) + `/mode`; `skills/pathguard.py`, `fileops.py` (7 tools), `shell.py` (`run_command`), `extract.py` (PDF/Word/PowerPoint text), `office.py` (.pptx and .xlsx by hand), `create_presentation` and `create_spreadsheet`, folder-by-name and name-aware lookup in `files.py`. Dependency added: `pypdf` (owner approved).
+- **Tests: 981 pass** (was 763). New: mode matrix, path guard (vault, system, links, `..`), every file tool, PDF/Word/PowerPoint extraction on generated real documents, 40 command refusals and 15 allowed commands, real PowerShell runs, `.pptx`/`.xlsx` package integrity and formula safety. Optional real-Office test: `RAGNAROK_OFFICE_TESTS=1`.
+
+### Measured (real model)
+- **Everyday battery `bench/daily_tasks.py`** (26 requests, throwaway home, default ask mode with every approval answered yes, passes only if the right thing exists on disk): **first run 19/26**, after the path fixes **25/26**, the last being a checker bug (the model had saved the to-do file on the Desktop, my check wanted Documents).
+  Passing: python, java and c programs, "write and run", ppt (also with "6 slides"), excel, Word doc, PDF to txt, new folder, folder + copy, rename, delete (to the Recycle Bin), list a folder, find a file, read a PDF, download images and a program, open an app, open YouTube, a plain question without tools, run a command, a to-do file, and honest "I can't" for an alarm and for sending an email. 1 to 8 s each; the slowest was the follow-up ".py extension" (13.9 s: five tool calls where none were needed).
+- Real PowerPoint opened the generated deck (4 slides, text correct, clean title and content slides when exported as images); Excel computed `=SUM` correctly.
+
+### Found
+- The model wrote `C:\Users\name\...` in 5 of the 7 first failures: it copied the example in our own tool description. Fixed the description, and made paths forgiving (stand-in names, bare names, known folders).
+- PowerPoint rejected the first deck as corrupt. Bisecting with PowerPoint's own file showed the cause: a slide master's body placeholder must say `type="body"`. Excel opened its file on the first try.
+- `format D: /q` slipped past the first refusal rule (a regex word boundary after a colon); a test found it.
+- A formula character class allowed `;`; xlsx formulas never use it, so it was only an opening. Removed.
+- Several of my own edits were corrupted by backslash handling in the shell layers (a NUL byte appeared in two source files). A scan for NUL bytes over `ragnarok/` and `tests/` is clean; the Edit tool is used for anything with backslashes now.
+
+### Not done / next (plan for the 6 hours)
+Variety and follow-up robustness, `open_path` ("open the ppt you made"), latency with 30+ tools, triggers (reminders, FR4), a visible plan and check for multi-step requests (FR3), crash/resume for the new tools, a demo script, README.

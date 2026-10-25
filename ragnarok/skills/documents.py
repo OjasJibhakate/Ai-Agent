@@ -24,6 +24,12 @@ from pydantic import Field
 from ragnarok.policy.permissions import Risk
 from ragnarok.runtime.tools import Tool, ToolArgs, ToolResult
 from ragnarok.skills.folders import documents_folder
+from ragnarok.skills.office import (
+    build_pptx,
+    build_xlsx,
+    parse_outline,
+    parse_table,
+)
 
 MAX_CHARS = 20_000
 RESERVED = {
@@ -134,28 +140,87 @@ def _write(path: Path, data: bytes) -> None:
     os.replace(part, path)  # a crash leaves a .part file, never half a document
 
 
+class CreatePresentationArgs(ToolArgs):
+    title: str = Field(min_length=2, max_length=120, description="The title of the presentation.")
+    outline: str = Field(
+        min_length=3,
+        max_length=MAX_CHARS,
+        description="One slide per '# Slide title' line, each followed by '- point' lines. "
+        "Write real content for every slide.",
+    )
+    subtitle: str | None = Field(
+        default=None, max_length=160, description="A line under the title."
+    )
+
+
+class CreateSpreadsheetArgs(ToolArgs):
+    title: str = Field(min_length=2, max_length=120, description="The name of the spreadsheet.")
+    table: str = Field(
+        min_length=3,
+        max_length=MAX_CHARS,
+        description="One row per line, cells separated by |. The first row holds the column "
+        "names. Numbers stay numbers; start a cell with = for a formula like =SUM(B2:B5).",
+    )
+
+
+def _write(path: Path, data: bytes) -> None:
+    part = path.with_name(path.name + ".part")
+    part.write_bytes(data)
+    os.replace(part, path)  # a crash leaves a .part file, never half a document
+
+
 def document_tools(documents: Path | None = None) -> list[Tool]:
     folder = (documents or documents_folder()) / "Ragnarok"
+
+    async def save(
+        title: str, ext: str, data: bytes, noun: str, detail: str = ""
+    ) -> str | ToolResult:
+        """Write a new file (never over an existing one) and say what was made."""
+        try:
+            await asyncio.to_thread(folder.mkdir, parents=True, exist_ok=True)
+            for stale in await asyncio.to_thread(lambda: list(folder.glob("*.part"))):
+                await asyncio.to_thread(stale.unlink, missing_ok=True)  # left by an earlier crash
+            path, already = await asyncio.to_thread(target_for, folder, safe_stem(title), ext, data)
+            if not already:
+                await asyncio.to_thread(_write, path, data)
+        except OSError as exc:
+            return f"error: I couldn't save the {noun} ({type(exc).__name__})."
+        verb = "Already created" if already else "Created"
+        return ToolResult(f"{verb} {path.name}{detail} in {folder}.", final=True)
 
     async def create_document(args: CreateDocumentArgs) -> str | ToolResult:
         if args.format == "docx":
             data = build_docx(args.title, args.content)
         else:
             data = build_text(args.title, args.content, args.format)
-        try:
-            await asyncio.to_thread(folder.mkdir, parents=True, exist_ok=True)
-            for stale in await asyncio.to_thread(lambda: list(folder.glob("*.part"))):
-                await asyncio.to_thread(stale.unlink, missing_ok=True)  # left by an earlier crash
-            path, already = await asyncio.to_thread(
-                target_for, folder, safe_stem(args.title), args.format, data
-            )
-            if not already:
-                await asyncio.to_thread(_write, path, data)
-        except OSError as exc:
-            return f"error: I couldn't save the document ({type(exc).__name__})."
-        verb = "Already created" if already else "Created"
-        return ToolResult(f"{verb} {path.name} in {folder}.", final=True)
+        return await save(args.title, args.format, data, "document")
 
+    async def create_presentation(args: CreatePresentationArgs) -> str | ToolResult:
+        try:
+            slides = parse_outline(args.outline)
+        except ValueError as exc:
+            return f"error: {exc}"
+        data = await asyncio.to_thread(build_pptx, args.title, args.subtitle or "", slides)
+        count = len(slides) + (
+            0 if slides[0].title.strip().lower() in ("title", args.title.lower()) else 1
+        )
+        return await save(args.title, "pptx", data, "presentation", f" ({count} slides)")
+
+    async def create_spreadsheet(args: CreateSpreadsheetArgs) -> str | ToolResult:
+        try:
+            rows = parse_table(args.table)
+        except ValueError as exc:
+            return f"error: {exc}"
+        data = await asyncio.to_thread(build_xlsx, args.title, rows)
+        detail = f" ({len(rows) - 1} rows, {len(rows[0])} columns)"
+        return await save(args.title, "xlsx", data, "spreadsheet", detail)
+
+    common = {
+        "risk": Risk.R1,  # a new file only; deleting it undoes it
+        "idempotent": True,  # the same file is recognised and not written twice
+        "sandbox": "workspace-write",
+        "fs": {"write": [str(folder)]},
+    }
     return [
         Tool(
             name="create_document",
@@ -163,11 +228,26 @@ def document_tools(documents: Path | None = None) -> list[Tool]:
             "text in the user's Documents folder. Use it when the user asks you to make a doc, "
             "note or file; it cannot change existing files.",
             args_model=CreateDocumentArgs,
-            risk=Risk.R1,  # a new file only; deleting it undoes it
-            idempotent=True,  # the same document is recognised and not written twice
             timeout_s=20,
-            sandbox="workspace-write",
-            fs={"write": [str(folder)]},
             handler=create_document,
-        )
+            **common,
+        ),
+        Tool(
+            name="create_presentation",
+            description="Create a PowerPoint presentation (.pptx) from a title and an outline. "
+            "Use it when the user asks you to make a ppt, slides or a presentation.",
+            args_model=CreatePresentationArgs,
+            timeout_s=30,
+            handler=create_presentation,
+            **common,
+        ),
+        Tool(
+            name="create_spreadsheet",
+            description="Create an Excel spreadsheet (.xlsx) from a table of rows. Use it when "
+            "the user asks you to make a spreadsheet, a table, an Excel sheet or a tracker.",
+            args_model=CreateSpreadsheetArgs,
+            timeout_s=30,
+            handler=create_spreadsheet,
+            **common,
+        ),
     ]
