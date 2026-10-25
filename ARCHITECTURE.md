@@ -221,8 +221,9 @@ This runs before any model call. The target is p95 < 800 ms; we expect well unde
 5. Classify the intent as `chat | direct_tool | multi_step | memory_admin`, using the nearest labelled examples
    (`config/intents.yaml`, ~15 per intent) plus simple rules. Only low confidence costs a model call, which is constrained to ≤ 16 tokens.
 
-The vector search is exact, over a float32 numpy matrix: 10k items × 768 × 4 B ≈ 31 MB, which takes milliseconds.
-No ANN index is needed below about 100k vectors.
+Vector search uses **Turbovec** (TurboQuant quantization) in RAM, rebuilt from the encrypted embeddings at startup.
+Exact numpy search over float32 (10k × 768 × 4 B ≈ 31 MB) is the fallback and the quality baseline (D-019).
+The full memory design is in `docs/MEMORY.md`.
 
 ---
 
@@ -669,6 +670,9 @@ restore time p50/p95 is reported. Results go into `docs/WORKLOG.md` and the READ
 ---
 
 ## 8. Memory (FR1)
+
+> **Persistent memory is the project's primary goal** (D-018). The detailed, authoritative spec is
+> [`docs/MEMORY.md`](docs/MEMORY.md); this section is a summary, and where the two differ, MEMORY.md wins.
 
 ### 8.1 Types
 
