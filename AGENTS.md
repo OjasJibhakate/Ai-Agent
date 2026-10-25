@@ -67,6 +67,15 @@ uv run python bench/recovery_bench.py
 cd ui ; npm install ; npm run build      # outputs to ragnarok/ui_dist
 ```
 
+## Dev environment notes (this laptop)
+
+- **Ollama** is installed at `%LOCALAPPDATA%\Programs\Ollama\ollama.exe` (not on PATH in older shells). Start it with
+  `powershell -ExecutionPolicy Bypass -File scripts\start_ollama.ps1`; it applies the `OLLAMA_*` settings and prints them from the server log.
+- **uv** is at the winget path; open a new shell or refresh PATH if `uv` isn't found. The project venv is `.venv` (Python 3.12).
+- Run tests with `uv run pytest -q`. Don't run `ruff format` on markdown; the config already excludes it.
+- The repo clone lives at `C:\Users\parth\dev\Ai-Agent` (outside OneDrive on purpose).
+- **Current focus: persistent memory** (`docs/MEMORY.md`, milestones M0-M6). Other pillars are optional.
+
 ## Where things go
 
 - **Pillars:** `ragnarok/skills/` + `ragnarok/sandbox/` (skills) · `ragnarok/planning/` · `ragnarok/triggers/` ·
