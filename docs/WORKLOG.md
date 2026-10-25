@@ -627,3 +627,9 @@ Variety and follow-up robustness, `open_path` ("open the ppt you made"), latency
 - Found by looking at it (new helper `scripts/preview_chat.py`, which fills the real window with a sample chat, a permission card and a plan card): at that width the header status ("model · GPU · N memories") was cut off at both ends and the close button was pushed out of the window, so the window could not be closed with the mouse. Fixed by packing the close button first and shortening the status to `model · GPU`; the memory count moved into the greeting. Cards and their buttons fit.
 - Tests: **1505 pass, 4 skipped**, ruff clean. New: the size, the close button and status staying inside the window, and the greeting with the memory count. One skip is a test that sometimes cannot open a Tk window (`test_gui_scale`), not related to this change.
 - Not verified: how it feels in daily use with a long conversation (the transcript scrolls; only short conversations were looked at).
+
+### 2026-10-26 (night) - typed text cropped in the chat box
+- Owner: "in the chatbox the character i type is half cropped". Cause, found by measuring: the transcript area asked Tk for its default 265 px of height, which left the input box only 22 px of the 44 px it needs (two lines), so typed text was cut off. It was introduced when the window was made smaller (300 x 360); at 340 x 420 there was just enough room, which hid it.
+- Fix: the transcript asks for almost no size (1 x 1) and expands to fill what is free, so the input box always gets its full height. Looked at on the real screen: two full lines of typed text show; the transcript still gets about 240 px.
+- Test added (`test_the_input_box_is_drawn_at_the_height_it_needs...`): it fails without the fix (22 >= 44) and passes with it.
+- Tests: **1506 pass**, ruff clean (see the commit for skips).

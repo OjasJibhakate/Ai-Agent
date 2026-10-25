@@ -67,7 +67,8 @@ class ChatWindow:
         # the transcript: a scrolling column of message widgets
         middle = tk.Frame(body, bg=t.BG)
         middle.pack(fill="both", expand=True)
-        self.canvas = tk.Canvas(middle, bg=t.BG, highlightthickness=0, bd=0)
+        # (it asks for almost no size and expands: Tk's default 265 px squeezed the input box)
+        self.canvas = tk.Canvas(middle, bg=t.BG, highlightthickness=0, bd=0, width=1, height=1)
         self.column = tk.Frame(self.canvas, bg=t.BG)
         self._window = self.canvas.create_window((0, 0), window=self.column, anchor="nw")
         self.canvas.pack(fill="both", expand=True)

@@ -1,5 +1,6 @@
 """Show the chat window with sample content and save a screenshot of it.
-Usage: python -m scripts.preview_chat out.png [plan]   (no plan: a chat and a permission card)"""
+Usage: python -m scripts.preview_chat out.png [plan|typing]
+(no option: a chat and a permission card; typing: a message half typed in the input box)"""
 
 import sys
 import tkinter as tk
@@ -16,7 +17,9 @@ chat = ChatWindow(root, Bridge(), on_busy=lambda _b: None, on_close=lambda: None
 chat.handle(
     "welcome", {"model": "qwen3.5:4b", "memories": 12, "gpu": "100% GPU", "first_run": False}
 )
-if "plan" in sys.argv[2:]:
+if "typing" in sys.argv[2:]:
+    chat.entry.insert("1.0", "write a short note about bubble sort and save it to my desktop")
+elif "plan" in sys.argv[2:]:
     rows = [
         ("s1", "Read the notes in the folder", [], "R0", False),
         ("s2", "Write the summary document", ["s1"], "R1", True),

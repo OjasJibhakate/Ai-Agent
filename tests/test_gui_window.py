@@ -207,3 +207,18 @@ def test_a_returning_user_is_told_how_much_is_remembered_only_when_it_is_somethi
     assert (
         chat.status.cget("text") == "m · 100% GPU"
     )  # the count is in the greeting, not the header
+
+
+def test_the_input_box_is_drawn_at_the_height_it_needs_so_typed_text_is_not_cropped(window):
+    chat, _bridge, root = window
+    chat.top.geometry(f"{WIDTH}x{HEIGHT}+40+40")
+    chat.top.deiconify()
+    chat.entry.insert("1.0", "write a short note about bubble sort and save it to my desktop")
+    for _ in range(5):
+        root.update()
+    footer = chat.entry.master
+    assert chat.entry.winfo_height() >= chat.entry.winfo_reqheight()  # not squeezed
+    assert footer.winfo_height() >= footer.winfo_reqheight()
+    window_bottom = chat.top.winfo_rooty() + HEIGHT
+    assert footer.winfo_rooty() + footer.winfo_height() <= window_bottom  # inside the window
+    assert chat.canvas.winfo_height() > 100  # and the transcript still gets most of the room
