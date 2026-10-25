@@ -109,3 +109,27 @@ Not yet checked: whether the SQLCipher build includes FTS5. That is a Phase 0 ta
 - https://www.promptquorum.com/prompt-bites/best-local-llm-6gb-vram
 - https://localaimaster.com/blog/best-ollama-models-tool-calling
 - https://insiderllm.com/guides/qwen-models-guide/
+
+### Memory focus (later on 2026-10-25)
+- **Direction:** persistent memory is the main goal; everything else is optional. Confirm the memory design before building.
+- **Team initial plan received** (SQLite source of truth, Turbovec/TurboQuant index, FTS5, RRF, consolidation, forgetting).
+  Refined into `docs/MEMORY.md`:
+  - mandatory encryption;
+  - the index kept in RAM only;
+  - two tiers, events → memories;
+  - `origin` + `confidence`;
+  - supersession with `valid_from` / `valid_to`;
+  - an always-on profile block;
+  - an outbox to keep SQLite and the index consistent.
+- **TurboQuant check:** a Google Research method announced in March 2026 that combines PolarQuant and QJL. It targets KV-cache
+  and vector compression. Turbovec is an independent MIT-licensed Rust library (github.com/RyanCodrai/turbovec), not a Google
+  project. Whether its implementation includes QJL must be verified from the source (MEMORY.md §8).
+- **Windows py3.12 wheels:** `turbovec` 1.1.2 ✓, `mem0ai` 2.2.1 ✓, `sqlite-vec` 0.1.9 ✓, `basic-memory` 0.24.1 ✓.
+- **Repo:** the team repo is cloned to `C:\Users\parth\dev\Ai-Agent` (outside OneDrive, which can corrupt `.git`). It is now the canonical copy of the docs.
+- **Not done yet:** Ollama install, which is waiting on the team's go-ahead.
+- **Sources:**
+  - https://research.google/blog/turboquant-redefining-ai-efficiency-with-extreme-compression/
+  - https://pypi.org/project/turbovec/
+  - https://discuss.pytorch.kr/t/turbovec-turboquant-rust/10295
+  - https://www.cognee.ai/open-source-memory-frameworks-llm-agents
+  - https://vectorize.io/articles/best-ai-agent-memory-systems
