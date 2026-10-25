@@ -179,7 +179,49 @@ async def test_empty_folder_and_missing_folder(tools, home):
     assert (await run(tools, "list_folder", folder="Desktop/nope")).startswith("error")
 
 
-# ---- reading -------------------------------------------------------------------------------------
+# ---- a folder named in words ----
+
+
+async def test_a_folder_is_found_by_its_name_in_plain_words(tools):
+    # "the files in my data structures folder" -> Desktop/DataStructures, however it is spelled
+    for words in ("data structures", "datastructures", "Data Structures folder", "DATA_STRUCTURES"):
+        out = await run(tools, "list_folder", folder=words)
+        assert "DataStructures has 2 items" in out.replace("\\", "/").replace("Desktop/", ""), words
+        assert "linked_list.py" in out and "notes.md" in out
+
+
+async def test_a_folder_that_does_not_exist_is_reported_by_name(tools):
+    out = await run(tools, "list_folder", folder="deep learning")
+    assert out.startswith("error") and "couldn't find a folder called 'deep learning'" in out
+
+
+async def test_asking_for_all_folders_asks_which_one_instead_of_listing_the_desktop(tools):
+    for word in ("all", "everywhere", ""):
+        out = await run(tools, "list_folder", folder=word)
+        assert out.startswith("error") and "say which folder" in out
+
+
+async def test_the_shallowest_matching_folder_wins(tools, home):
+    (home / "Desktop" / "a" / "b" / "reports").mkdir(parents=True)
+    (home / "Desktop" / "a" / "b" / "reports" / "deep.txt").write_text("x")
+    (home / "Documents" / "reports").mkdir()
+    (home / "Documents" / "reports" / "top.txt").write_text("x")
+    out = await run(tools, "list_folder", folder="reports")
+    assert "top.txt" in out and "deep.txt" not in out
+
+
+async def test_a_folder_name_cannot_reach_secret_or_outside_folders(tools, home):
+    for words in ("ssh", "Secrets", "outside", "passwords", "kdbx"):
+        out = await run(tools, "list_folder", folder=words)
+        assert out.startswith("error"), words
+
+
+async def test_find_files_can_be_limited_to_a_folder_by_name(tools):
+    out = await run(tools, "find_files", query="notes", folder="data structures")
+    assert "notes.md" in out and "dsa notes.txt" not in out
+
+
+# ---- reading ----
 
 
 async def test_read_file_returns_text_inside_data_tags(tools):

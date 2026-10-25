@@ -11,7 +11,7 @@ Project rules for contributors and coding agents: [`AGENTS.md`](AGENTS.md).
 
 Target machine: HP OMEN 16, i5-13420H, 16 GB RAM, RTX 4050 6 GB, Windows 11, no WSL or Docker.
 
-*Last updated: 2026-10-25 21:40 IST (UTC+05:30).*
+*Last updated: 2026-10-25 22:15 IST (UTC+05:30).*
 
 ---
 
@@ -35,6 +35,8 @@ Controls: `memory pin|unpin N`, `memory correct N --text "the right fact"`, `mem
 `memory export FILE --yes-plaintext` (that file is not encrypted). Run them as `uv run python -m ragnarok memory ...`.
 
 Screen: `look at my screen and tell me what is open` reads it (one screenshot, kept in memory only). `use the mouse and keyboard to ...` lets it act, after you say yes; hold Esc or move the mouse to stop it, and it never types into a terminal. Acting is experimental (5 of 15 on our test window), see D-035. `RAGNAROK_NO_SCREEN=1` turns both off.
+
+Downloads: `download cat images` (photos from Wikimedia Commons, 5 by default, up to 10), `download steam`, `download chrome`, or `download https://...` with a link you typed. It asks before saving a file, saves into `Downloads\Ragnarok`, never runs anything, and says plainly when it needs the link. Documents: `what files are in my deep learning folder`, then `make a doc file for them`, creates a Word file in `Documents\Ragnarok`. `RAGNAROK_NO_DOWNLOADS=1` turns the downloads off.
 
 The models do not run "in" the terminal: they run in the Ollama background process on your GPU, and the terminal is the chat window.
 
@@ -71,8 +73,9 @@ Times are commit times (IST). Details and numbers for each line are in the work 
 | 2026-10-25 19:45 | CLI controls for all of it (`memory pin\|correct\|revert\|export\|stats\|consolidate\|prune\|maintain\|undo-summary`) and idle-time maintenance in the chat | `27fedd9` |
 | 2026-10-25 20:10 | `open_website`: "open chrome and go to yt and search ..." now works (sites and searches in the browser you name; hostile addresses refused; multi-step requests no longer cut short) | `8412f03` |
 | 2026-10-25 21:40 | **Screen skill (experimental):** `read_screen` (answers questions about what is on the screen) and `use_computer` (mouse and keyboard, asks first, Esc or mouse move stops it, never types into a terminal). Live test on a small test window: **5 of 15 tasks succeeded**; reading is solid, acting is not yet (D-035) | `048167a` |
+| 2026-10-25 22:15 | **Downloads and documents:** `download cat images` saves real photos (Wikimedia Commons, with credits); `download steam` / `chrome` / `vscode` ... or a link you type saves the file to `Downloads\Ragnarok` (asks first, never runs it, refuses private addresses and web pages); `make a doc file for them` creates a Word document; folders can be named in words (D-036, D-037). Checked on the real internet and in real Word | next commit |
 
-550 tests pass and `ruff` is clean as of the last commit.
+763 tests pass and `ruff` is clean as of the last commit.
 
 ### Remaining
 
@@ -83,6 +86,7 @@ Times are commit times (IST). Details and numbers for each line are in the work 
 | A held-out evaluation set (the prompts were tuned on the current small one); final numbers for the README | M6 | not started |
 | Paraphrased questions are the weak spot of retrieval (recall@5 about 0.77) | M6 | idea: query expansion or question-style embeddings |
 | Screen acting accuracy: a zoom-in look before clicking, then Windows UI Automation for apps that expose controls; try on real apps | skills | **experimental, 5/15 on the test window** |
+| Download anything by search (today: named installers, typed links, Commons pictures); resume of interrupted downloads | skills | not started |
 | Skills registry and sandbox (FR2) | pillar | design only |
 | Planning with a verifier and failure ladder (FR3) | pillar | design only |
 | Triggers and proactive suggestions (FR4) | pillar | design only |

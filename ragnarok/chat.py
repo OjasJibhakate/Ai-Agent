@@ -26,7 +26,10 @@ from ragnarok.runtime.gateway import CHAT_MODEL, OLLAMA_URL, Gateway
 from ragnarok.runtime.loop import Agent, Session
 from ragnarok.runtime.tools import PROGRESS, Tool, memory_tools
 from ragnarok.skills.apps import WindowsApps, app_tools
+from ragnarok.skills.documents import document_tools
+from ragnarok.skills.downloads import download_tools
 from ragnarok.skills.files import file_tools
+from ragnarok.skills.images import image_tools
 from ragnarok.skills.screen.tools import screen_tools
 from ragnarok.skills.web import web_tools
 from ragnarok.ui import Console, Welcome
@@ -117,6 +120,12 @@ class ChatApp:
                 + app_tools(self._catalog)
                 + file_tools()
                 + web_tools()
+                + document_tools()
+                + (
+                    []
+                    if os.environ.get("RAGNAROK_NO_DOWNLOADS") == "1"
+                    else image_tools() + download_tools()
+                )
                 + ([] if os.environ.get("RAGNAROK_NO_SCREEN") == "1" else screen_tools(rt.gateway))
             )
         self.agent = Agent(

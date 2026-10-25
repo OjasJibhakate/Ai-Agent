@@ -37,7 +37,9 @@ MAX_STEPS = 15
 MAX_SECONDS = 150.0
 UNCHANGED_LIMIT = 3  # screens that did not change in a row
 REPEAT_LIMIT = 3  # the same action this many times
-MOUSE_MOVED_PIXELS = 40  # the user took the mouse: stop
+# The user took the mouse: stop. 40 px was too touchy (a nudge while watching ended a task); someone
+# grabbing the mouse on purpose moves it much further than this. Esc stops it at any time as well.
+MOUSE_MOVED_PIXELS = 120
 PROMPT_PATH = Path(__file__).parent.parent.parent / "runtime" / "prompts" / "screen.txt"
 RISKY = re.compile(
     r"\b(delete|remove|erase|format|uninstall|install|send|submit|pay|buy|purchase|order|checkout|"
@@ -326,9 +328,7 @@ class ScreenTask:
                 return finish(
                     None, f"Stopped: it was taking too long ({int(self.max_seconds)}s limit)."
                 )
-            if cursor_at is not None and _far(
-                self.windows.cursor(), cursor_at, MOUSE_MOVED_PIXELS
-            ):
+            if cursor_at is not None and _far(self.windows.cursor(), cursor_at, MOUSE_MOVED_PIXELS):
                 return finish(None, "Stopped: you moved the mouse, so I handed control back.")
 
             frame = await asyncio.to_thread(self.screen.grab)

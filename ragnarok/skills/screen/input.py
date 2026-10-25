@@ -103,7 +103,8 @@ def check_target_window(window: WindowInfo | None, what: str) -> None:
     if window.process in BLOCKED_PROCESSES or BLOCKED_TITLES.match(window.title.strip()):
         raise InputRefused(
             f"I will not send {what} to {window.process or 'that window'} ({window.title[:30]!r}): "
-            "typed text would be run as a command there"
+            "typed text would be run as a command there. Click the program you want to use "
+            "first (for example its icon on the taskbar), then try again"
         )
 
 

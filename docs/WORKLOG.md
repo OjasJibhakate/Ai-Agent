@@ -482,3 +482,26 @@ Use it for a few days (`memory stats` shows what is happening); then a held-out 
 - Not tried on real applications (Notepad, a browser page, Settings) or on a second monitor/scaling setup; I did not look at the owner's real screen while building this. The test window was opened briefly on the desktop during live runs.
 - `read_screen` has not been run on a real desktop yet by me; it should be tried with `look at my screen and tell me what is open`.
 - No answer-quality test of the model's long descriptions of busy screens.
+
+## 2026-10-25 (night) - "download cat images", "it should be able to download anything I said", "make a doc file for them"
+
+### Built (D-036, D-037)
+- `skills/images.py` (`download_images`), `skills/downloads.py` (`download_file`), `skills/documents.py` (`create_document`), `skills/folders.py` (the real Desktop/Documents/Downloads), folder-by-name lookup in `skills/files.py`, prompts for all of it, `RAGNAROK_NO_DOWNLOADS=1`.
+- Tests: **763 pass** (was 550), `ruff` clean. About 210 are new: URL and IP rules (including the metadata address, IPv4-mapped IPv6, redirects to private hosts, loops), HTML refusal, size caps, disk space, file names and reserved Windows names, path traversal, crash cleanup and retry (kill-and-resume, including a timeout mid-download), no overwrite, idempotence, `.docx` structure and escaping, log-before-act and permission checks through the real agent loop, and "the owner is not asked about a download that cannot happen".
+
+### Measured
+- Real model, fake servers, 10 requests: correct tool and arguments every time ("download cat images" 1.7 s, "download steam" 1.0 s); unknown programs and a paper title got "paste the link"; "open youtube and search lofi beats" still opens YouTube.
+- **Real internet (my machine, temp folder, deleted after):** 3 Wikimedia Commons cat photos in 3.8 s with credits; Steam's installer (2.3 MB) in 0.8 s with an `MZ` header, the internet mark and a SHA-256; python.org (a web page) refused.
+- Real Microsoft Word 16 opened a generated `.docx` (private invisible instance): 7 paragraphs, formats and special characters intact.
+- The owner's scenario on the real model (temp tree): "what files are in my deep learning folder" lists the 5 files (1.5 s); "make a doc file for them" creates `Deep Learning Files.docx` with the 5 exact names (2.0 s).
+
+### Found
+- The live Commons API serves thumbnails from `thumb.wikimedia.org`; the allow-list refused it and the tool said "no pictures found" while every mock test passed. Added the host, added a test with the real reply shape.
+- The model asked `list_folder` for `all` and presented the Desktop as if it were the answer; "all" now asks which folder. It also chose Markdown for "a doc file"; `.docx` is now the stated default in the tool and the prompt.
+- From the owner's pasted session: the terminal was not "left visible"; the focus simply moved to their other terminal window, which the typing rule rightly refused. The 40 px mouse stop was too touchy (D-037).
+- The first download design asked the owner `[y/N]` before refusing impossible requests; the arguments are now checked first.
+
+### Not done / not verified
+- No search for arbitrary files (only named installers, typed links and Commons pictures); no resume of an interrupted download (it restarts); DNS rebinding not closed (D-036).
+- The 10 installer links are fixed in code and will go stale; the Python entry is pinned to 3.12.8, not "latest".
+- Not tried in the owner's own `chat` window. The screen-task path that "make a doc file" used to fall back on is now unnecessary for that request, but is still 5/15 on the test window (D-035).

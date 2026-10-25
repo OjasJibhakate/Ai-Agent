@@ -14,7 +14,7 @@ x and y are the centre of the element on a scale from 0 to 1000 across the scree
 
 Tips:
 - Do exactly the kind of click the task names: "double-click" means double_click, "right-click" means right_click.
-- To open a program press the win key, type its name, then press enter.
+- To open a program press the win key, type its name, then press enter. If keys or typing are refused because a terminal has the focus, click the program's icon on the taskbar (or the Start button) first.
 - In a browser press ctrl+l to reach the address bar, type the address or search words, then press enter.
 - After filling a search box press enter.
 - Fill a form one field at a time with fill. Click a checkbox once to tick it. Finish with the form's button.

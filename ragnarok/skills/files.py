@@ -24,6 +24,7 @@ from pydantic import Field
 
 from ragnarok.policy.permissions import Risk
 from ragnarok.runtime.tools import CURRENT_TEXT, Tool, ToolArgs, ToolResult
+from ragnarok.skills.folders import known_folder
 
 ROOT_NAMES = ("Desktop", "Documents", "Downloads")
 MAX_DEPTH = 6
@@ -77,6 +78,12 @@ def default_roots(home: Path | None = None) -> list[Path]:
         for name in ROOT_NAMES:
             p = base / name
             if p.is_dir() and p.resolve() not in seen:
+                seen.add(p.resolve())
+                roots.append(p.resolve())
+    if real_profile:  # the folders Windows itself names (what a download or a new document uses)
+        for name in ROOT_NAMES:
+            p = known_folder(name.lower())
+            if p is not None and p.resolve() not in seen:
                 seen.add(p.resolve())
                 roots.append(p.resolve())
     return roots
@@ -154,10 +161,37 @@ class FileAccess:
         named = [r for r in self.roots if r.name.lower() == name]
         if named:
             return named
+        if not re.search(r"[\/:]", name):  # a plain name like "deep learning", not a path
+            found = self.find_folder(folder)
+            if found is None:
+                raise ValueError(
+                    f"I couldn't find a folder called {folder.strip()!r} in Desktop, "
+                    "Documents or Downloads"
+                )
+            return [found]
         path = self.resolve(folder)
         if not path.is_dir():
             raise ValueError("that is not a folder")
         return [path]
+
+    def find_folder(self, text: str) -> Path | None:
+        """The folder whose name matches these words ("deep learning" finds Deep_learning)."""
+        tokens = query_tokens(text)
+        if not tokens:
+            return None
+        deadline = time.monotonic() + TIME_BUDGET_S
+        best: tuple[int, float, Path] | None = None
+        for entry, is_dir in self.walk(self.roots, deadline):
+            if not is_dir or not all(_matches(t, _norm(entry.name)) for t in tokens):
+                continue
+            path = Path(entry.path)
+            try:
+                key = (_depth(path, self.roots), -entry.stat(follow_symlinks=False).st_mtime, path)
+            except OSError:
+                continue
+            if best is None or key[:2] < best[:2]:
+                best = key
+        return best[2] if best else None
 
     # ---- walking -----------------------------------------------------------------------------
 
@@ -252,6 +286,8 @@ class FileAccess:
         return hits
 
     def listing(self, folder: str) -> tuple[Path, list[os.DirEntry], int]:
+        if folder.strip().lower() in ("", "all", "everywhere", "anywhere"):
+            raise ValueError("say which folder: desktop, documents, downloads, or a folder's name")
         roots = self.roots_for(folder)
         target = roots[0]
         entries = []
@@ -327,7 +363,8 @@ class FindFilesArgs(ToolArgs):
 
 class ListFolderArgs(ToolArgs):
     folder: str = Field(
-        default="desktop", description="desktop, documents, downloads, or a folder path."
+        default="desktop",
+        description="desktop, documents, downloads, or the name of a folder, like 'deep learning'.",
     )
 
 
@@ -446,8 +483,8 @@ def file_tools(roots: list[Path] | None = None, home: Path | None = None) -> lis
         ),
         Tool(
             name="list_folder",
-            description="List what is in the Desktop, Documents or Downloads folder. "
-            "Use it when the user asks what is in one of them.",
+            description="List what is in the Desktop, Documents or Downloads folder, or in a "
+            "folder inside them by name. Use it when the user asks what is in a folder.",
             args_model=ListFolderArgs,
             timeout_s=10,
             handler=list_folder,
