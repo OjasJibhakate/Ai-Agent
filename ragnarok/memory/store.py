@@ -13,7 +13,7 @@ import hashlib
 import math
 import re
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 
@@ -25,6 +25,9 @@ EMBED_DIM = 768
 INDEX_NAME = "memories"
 RRF_K = 60
 CANDIDATES = 30
+# Vector search always returns neighbours, so weak matches are cut. Placeholder until the
+# retrieval benchmark calibrates it on real nomic-embed-text scores.
+DEFAULT_MIN_SEMANTIC = 0.3
 BASE_CONFIDENCE: dict[str, float] = {"user_stated": 0.95, "observed": 0.85, "inferred": 0.7}
 
 _STOP = frozenset(
@@ -51,6 +54,21 @@ def _stamp(dt: datetime) -> str:
     return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+_SECRET_PATTERNS = (
+    re.compile(r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key)\b\s*(is|=|:)\s*\S+"),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]{16,}"),
+    re.compile(r"\b(sk|ghp|gho|xox[bap])[-_][A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+)
+
+
+def scrub_secrets(text: str) -> str:
+    """Replace token- and password-like strings before anything is stored."""
+    for pattern in _SECRET_PATTERNS:
+        text = pattern.sub("[REDACTED]", text)
+    return text
+
+
 def content_hash(text: str) -> str:
     normalized = " ".join(text.lower().split())
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
@@ -71,12 +89,14 @@ class MemoryStore:
         model: str = "nomic-embed-text",
         index_kind: str = "turbovec",
         clock: Callable[[], datetime] = utcnow,
+        min_semantic: float = DEFAULT_MIN_SEMANTIC,
     ) -> None:
         self.vault = vault
         self.dim = dim
         self.model = model
         self.index_kind = index_kind
         self.clock = clock
+        self.min_semantic = min_semantic
         self.index: VectorIndex = self._new_index()
 
     # ---- index lifecycle -------------------------------------------------------------------
@@ -199,8 +219,13 @@ class MemoryStore:
         entities: Sequence[tuple[str, str]] = (),
         tags: Sequence[str] = (),
         event_ids: Sequence[int] = (),
+        supersedes: int | None = None,
     ) -> int:
-        """Store a memory and its vector. An identical active memory is returned, not duplicated."""
+        """Store a memory and its vector. An identical active memory is returned, not duplicated.
+
+        With `supersedes`, the old memory is marked superseded in the same transaction and keeps
+        its history (valid_to is set, nothing is erased).
+        """
         content = content.strip()
         if not content:
             raise ValueError("memory content is empty")
@@ -264,8 +289,142 @@ class MemoryStore:
                 "INSERT INTO index_outbox(op, memory_id, created_at) VALUES ('add', ?, ?)",
                 (memory_id, now),
             )
+            if supersedes is not None:
+                changed = con.execute(
+                    "UPDATE memories SET status = 'superseded', valid_to = ?"
+                    " WHERE id = ? AND status = 'active'",
+                    (now, supersedes),
+                ).rowcount
+                if not changed:
+                    raise ValueError(f"memory {supersedes} is not active, cannot supersede it")
+                con.execute(
+                    "UPDATE memories SET supersedes_id = ? WHERE id = ?", (supersedes, memory_id)
+                )
+                con.execute(
+                    "INSERT INTO index_outbox(op, memory_id, created_at) VALUES ('remove', ?, ?)",
+                    (supersedes, now),
+                )
         self._apply_pending()
         return memory_id
+
+    def reinforce(self, memory_id: int, event_ids: Sequence[int] = ()) -> None:
+        """The same fact was seen again: bump confidence (inferred stays capped) and provenance."""
+        mem = self.get(memory_id)
+        if mem is None or mem.status != "active":
+            raise ValueError(f"memory {memory_id} is not active")
+        cap = BASE_CONFIDENCE["inferred"] if mem.origin == "inferred" else 0.99
+        with self.vault.transaction() as con:
+            con.execute(
+                "UPDATE memories SET confidence = ?, access_count = access_count + 1 WHERE id = ?",
+                (min(cap, mem.confidence + 0.02), memory_id),
+            )
+            con.executemany(
+                "INSERT OR IGNORE INTO memory_sources VALUES (?, ?)",
+                [(memory_id, e) for e in event_ids],
+            )
+
+    def archive(self, memory_id: int) -> None:
+        mem = self.get(memory_id)
+        if mem is None or mem.status != "active":
+            raise ValueError(f"memory {memory_id} is not active")
+        if mem.pinned:
+            raise ValueError("pinned memories are never archived")
+        self._set_status(memory_id, "archived", "remove")
+
+    def restore(self, memory_id: int) -> None:
+        mem = self.get(memory_id)
+        if mem is None or mem.status != "archived":
+            raise ValueError(f"memory {memory_id} is not archived")
+        self._set_status(memory_id, "active", "add")
+
+    def _set_status(self, memory_id: int, status: str, op: str) -> None:
+        now = self._now()
+        with self.vault.transaction() as con:
+            con.execute("UPDATE memories SET status = ? WHERE id = ?", (status, memory_id))
+            con.execute(
+                "INSERT INTO index_outbox(op, memory_id, created_at) VALUES (?, ?, ?)",
+                (op, memory_id, now),
+            )
+        self._apply_pending()
+
+    def delete(self, memory_id: int) -> bool:
+        """Hard delete (NFR4.2): row, FTS entry, embedding, tags, links, provenance, index entry.
+
+        Leaves a content-free tombstone (id and time only). `secure_delete` overwrites the pages.
+        """
+        now = self._now()
+        with self.vault.transaction() as con:
+            deleted = con.execute("DELETE FROM memories WHERE id = ?", (memory_id,)).rowcount
+            if not deleted:
+                return False
+            con.execute(
+                "INSERT INTO audit_log(ts, action, ref_id) VALUES (?, 'memory_deleted', ?)",
+                (now, memory_id),
+            )
+            con.execute(
+                "INSERT INTO index_outbox(op, memory_id, created_at) VALUES ('remove', ?, ?)",
+                (memory_id, now),
+            )
+        self._apply_pending()
+        return True
+
+    # ---- events (the raw, expiring tier) ----------------------------------------------------
+
+    def record_event(
+        self,
+        source: str,
+        kind: str,
+        payload: str,
+        *,
+        session_id: str | None = None,
+        retention_days: int = 30,
+        dedupe_seconds: int = 300,
+    ) -> int | None:
+        """Append a raw event. Secrets are scrubbed, trivial text is dropped, repeats are merged."""
+        text = scrub_secrets(payload).strip()
+        if len(text) < 3:
+            return None
+        digest = content_hash(f"{kind}:{text}")
+        now = self.clock()
+        floor = _stamp(now - timedelta(seconds=dedupe_seconds))
+        dup = self.vault.query(
+            "SELECT id FROM events WHERE content_hash = ? AND ts >= ?", (digest, floor)
+        )
+        if dup:
+            return dup[0][0]
+        expires = _stamp(now + timedelta(days=retention_days)) if retention_days else None
+        with self.vault.transaction() as con:
+            return con.execute(
+                "INSERT INTO events(ts, source, kind, payload, content_hash, session_id,"
+                " expires_at)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (_stamp(now), source, kind, text, digest, session_id, expires),
+            ).lastrowid
+
+    def pending_events(self, limit: int = 50) -> list[dict]:
+        rows = self.vault.query(
+            "SELECT id, ts, source, kind, payload, session_id FROM events"
+            " WHERE ingested_at IS NULL ORDER BY id LIMIT ?",
+            (limit,),
+        )
+        keys = ("id", "ts", "source", "kind", "payload", "session_id")
+        return [dict(zip(keys, r, strict=True)) for r in rows]
+
+    def mark_ingested(self, event_ids: Sequence[int]) -> None:
+        now = self._now()
+        with self.vault.transaction() as con:
+            con.executemany(
+                "UPDATE events SET ingested_at = ? WHERE id = ?", [(now, e) for e in event_ids]
+            )
+
+    def expire_events(self) -> int:
+        """Drop events past their retention window, unless a memory still cites them."""
+        with self.vault.transaction() as con:
+            return con.execute(
+                "DELETE FROM events WHERE expires_at IS NOT NULL AND expires_at < ?"
+                " AND id NOT IN (SELECT event_id FROM memory_sources)",
+                (self._now(),),
+            ).rowcount
 
     def touch(self, ids: Sequence[int]) -> None:
         """Record that memories were used in an answer (feeds forgetting later)."""
@@ -285,6 +444,57 @@ class MemoryStore:
         )
         return _row_to_memory(rows[0]) if rows else None
 
+    def history(self, memory_id: int) -> list[Memory]:
+        """The memory followed back through everything it superseded, newest first."""
+        chain: list[Memory] = []
+        seen: set[int] = set()
+        current = self.get(memory_id)
+        while current is not None and current.id not in seen:
+            chain.append(current)
+            seen.add(current.id)
+            current = self.get(current.supersedes_id) if current.supersedes_id else None
+        return chain
+
+    def similar(self, vector: np.ndarray, k: int = 5) -> list[tuple[Memory, float]]:
+        """Nearest active memories by embedding, with cosine scores (used to dedupe on write)."""
+        found = self.index.search(vector, k)
+        loaded = self._load_active([i for i, _ in found], include_secret=True) if found else {}
+        return [(loaded[i], score) for i, score in found if i in loaded]
+
+    def list_memories(
+        self,
+        *,
+        status: str | None = "active",
+        memory_type: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Memory]:
+        clauses, params = [], []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if memory_type:
+            clauses.append("memory_type = ?")
+            params.append(memory_type)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.vault.query(
+            f"SELECT {_MEMORY_COLUMNS} FROM memories {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+            (*params, limit, offset),
+        )
+        return [_row_to_memory(r) for r in rows]
+
+    def profile_memories(self, limit: int = 12) -> list[Memory]:
+        """Pinned memories, then top preferences, then project facts (no search needed)."""
+        cols = ", ".join(f"m.{c.strip()}" for c in _MEMORY_COLUMNS.split(","))
+        rows = self.vault.query(
+            f"SELECT {cols} FROM memories m WHERE m.status = 'active' AND m.sensitivity = 'normal'"
+            " AND (m.pinned = 1 OR m.memory_type IN ('preference', 'project'))"
+            " ORDER BY m.pinned DESC, (m.memory_type = 'preference') DESC,"
+            " m.importance DESC, m.access_count DESC, m.id DESC LIMIT ?",
+            (limit,),
+        )
+        return [_row_to_memory(r) for r in rows]
+
     def search(
         self,
         query: str,
@@ -297,7 +507,7 @@ class MemoryStore:
         """Hybrid retrieval: FTS5 + vector -> RRF -> rerank -> verify against SQLite."""
         lexical = self._lexical(query)
         semantic = (
-            [i for i, _ in self.index.search(query_vector, CANDIDATES)]
+            [i for i, s in self.index.search(query_vector, CANDIDATES) if s >= self.min_semantic]
             if query_vector is not None
             else []
         )

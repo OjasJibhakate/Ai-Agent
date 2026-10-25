@@ -11,6 +11,7 @@ from ragnarok.memory.store import MemoryStore, fts_query
 from ragnarok.memory.vault import Vault
 from tests.fake_embedder import FakeEmbedder, embed_text
 
+NOISE = 0.1  # hashed bag-of-words vectors: unrelated pairs score about 0.03
 T0 = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
 
 
@@ -37,7 +38,7 @@ def kind(request) -> str:
 
 def make(tmp_path, key, kind, clock=None) -> tuple[Vault, MemoryStore, MemoryService, FakeEmbedder]:
     vault = Vault.open(tmp_path / "vault.db", key)
-    store = MemoryStore(vault, index_kind=kind, clock=clock or Clock())
+    store = MemoryStore(vault, index_kind=kind, clock=clock or Clock(), min_semantic=NOISE)
     store.start()
     emb = FakeEmbedder()
     return vault, store, MemoryService(store, emb), emb
@@ -191,7 +192,7 @@ async def test_restart_loads_checkpointed_index_and_replays_later_writes(tmp_pat
     vault.close()
 
     vault2 = Vault.open(tmp_path / "vault.db", key)
-    store2 = MemoryStore(vault2, clock=Clock())
+    store2 = MemoryStore(vault2, clock=Clock(), min_semantic=NOISE)
     assert store2.start() == "loaded"  # blob loaded, outbox entries after it replayed
     assert len(store2.index) == 21
     svc2 = MemoryService(store2, FakeEmbedder())
@@ -207,7 +208,7 @@ async def test_corrupt_index_blob_triggers_rebuild(tmp_path, key):
     vault.close()
 
     vault2 = Vault.open(tmp_path / "vault.db", key)
-    store2 = MemoryStore(vault2, clock=Clock())
+    store2 = MemoryStore(vault2, clock=Clock(), min_semantic=NOISE)
     assert store2.start() == "rebuilt"
     svc2 = MemoryService(store2, FakeEmbedder())
     assert (await svc2.recall("meetings"))[0].memory.id == mid
@@ -225,7 +226,7 @@ async def test_stale_blob_count_mismatch_triggers_rebuild(tmp_path, key):
     vault.close()
 
     vault2 = Vault.open(tmp_path / "vault.db", key)
-    store2 = MemoryStore(vault2, clock=Clock())
+    store2 = MemoryStore(vault2, clock=Clock(), min_semantic=NOISE)
     assert store2.start() == "rebuilt"
     assert (await MemoryService(store2, FakeEmbedder()).recall("pears"))[0].memory.id == second
     vault2.close()
