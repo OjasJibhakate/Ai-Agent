@@ -143,3 +143,23 @@ Format: context → decision → alternatives → consequences → revisit if.
   - `AGENTS.md` holds the project context; Codex reads it directly, and `CLAUDE.md` imports it for Claude Code.
   - `docs/DECISIONS.md` records why things were chosen; `docs/WORKLOG.md` records what happened and what was measured.
   - Old design docs are kept in `docs/history/`.
+
+### D-018 — Persistent memory is the primary goal
+- **Date:** 2026-10-25 · **Status:** accepted (supersedes the priority order in D-001)
+- **Context:** The team decided that remembering the user across days is the core of the project. The other pillars are optional.
+- **Decision:** Build and demo memory first (`docs/MEMORY.md` milestones M0–M6). Skills, planning, triggers, and recovery
+  work only after the memory milestones are done, or where memory needs them (e.g. a minimal chat loop for the demo).
+- **Consequences:** The first demo is "it remembers you after a restart and on a new day", with measured recall and latency.
+
+### D-019 — Memory storage: SQLCipher source of truth + FTS5 + Turbovec in RAM
+- **Date:** 2026-10-25 · **Status:** accepted, pending the M0 checks (supersedes the "no Turbovec" part of D-005)
+- **Context:** The team's initial memory plan uses SQLite + FTS5 + a Turbovec/TurboQuant vector index + RRF. `turbovec` 1.1.2
+  has a Windows py3.12 wheel, ID-mapped indexes with remove, and allowlist search (to be confirmed in M0).
+- **Decision:**
+  - All memory records, provenance, and float32 embeddings live in the encrypted SQLCipher vault.
+  - Turbovec is used as the vector index **in RAM only**, rebuilt from the vault at startup. If it is ever saved, the saved bytes must be encrypted.
+  - The vector index sits behind a `VectorIndex` interface, with exact numpy search as the baseline and fallback.
+  - Memories are two-tier (`events` → `memories`), and `origin` + `confidence` keep inferences separate from facts.
+- **Alternatives:** Mem0 (good extraction logic but its own unencrypted stores; we borrow its ADD/UPDATE/SUPERSEDE/NOOP idea),
+  Letta (a full agent server, too heavy), Graphiti/Zep (needs Neo4j, too heavy), basic-memory (plaintext markdown files).
+- **Revisit if:** Turbovec recall@10 against exact search is < 0.95 at the chosen bit width, or the source shows the API doesn't fit.
