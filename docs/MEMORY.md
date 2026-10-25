@@ -340,7 +340,7 @@ All results are recorded in `docs/WORKLOG.md` with the hardware and software ver
 | M0 | Environment: Ollama + `nomic-embed-text` + `qwen3.5:4b`, uv + Python 3.12; SQLCipher FTS5 check; Turbovec API + source check | checks recorded in the WORKLOG |
 | M1 | `vault.py` + schema + migrations (encrypted) | open/close/reopen tests pass; header check passes. **Done 2026-10-25.** |
 | M2 | `remember` / `recall` with FTS5 + vector index + RRF + rerank + SQLite verify | restart test passes; latency measured. **Done 2026-10-25** (bench: recall@5 0.90, MRR 0.84, ~119 ms p95; see D-026). |
-| M3 | `ingest`: extraction + ADD/UPDATE/SUPERSEDE/NOOP + provenance | multi-day timeline test passes |
+| M3 | `ingest`: extraction + ADD/UPDATE/SUPERSEDE/NOOP + provenance | multi-day timeline test passes. **Done 2026-10-25** (real-model eval 15/15 extraction, 12/12 decisions on a small tuned set; see D-027). |
 | M4 | Profile block + `memory_search` / `memory_save` tools + a minimal chat loop to demo it | a new session on a "new day" knows the user |
 | M5 | Consolidation, forgetting, user controls, hard-delete cascade | deletion check passes; consolidation is reversible |
 | M6 | Benchmarks + Turbovec-vs-exact report | numbers in the WORKLOG and README |

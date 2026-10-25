@@ -310,3 +310,31 @@ Results are in `bench/results/retrieval_2026-10-25.json`.
 - Paraphrase recall@5 is 0.77 at the chosen cutoff; contradicted-fact queries find the new fact 73% of the time. Ideas: query expansion on low confidence,
   or a second embedding of each memory phrased as a question. Not tried.
 - The labelled set is mine and synthetic; it checks plumbing and relative stage quality, not real-life recall.
+
+## 2026-10-25 (night) - M3: extraction and ADD / UPDATE / SUPERSEDE / NOOP
+
+### Done
+- `ragnarok/memory/ingest.py`: events -> extraction (JSON schema) -> per candidate: hash/near-duplicate check, neighbour lookup (cosine >= 0.6), decision
+  (a model call only when neighbours exist), apply with provenance. Prompts are text files in `ragnarok/runtime/prompts/` (`system.txt` is the shared prefix).
+- Store additions: `link`, `reinforce`, `history`, `similar`, `record_event` (secret scrubbing, trivial-text drop, 5-minute dedupe), `pending_events`,
+  `mark_ingested`, `expire_events` (keeps events a memory still cites). Migration 0003 adds `events.ingested_at`.
+- Gateway: `chat_json` (schema-constrained, temperature 0, fixed seed) and a tool-calling `chat`.
+- Rules enforced in code: see D-027.
+- Tests: **98 pass**. `tests/test_m3_ingest.py` has 15 cases with a scripted model, including the 14-day timeline: day 14 returns the current meeting
+  time and manager, the superseded versions stay in the history with `valid_to`, restating a fact reinforces it (confidence 0.95 -> 0.97) and adds provenance, and
+  superseded facts are out of the index.
+
+### Real-model quality (`bench/ingest_eval.py`, qwen3.5:4b, `think: false`, results in `bench/results/ingest_eval_2026-10-25.json`)
+| | First run | Final |
+|---|---|---|
+| Extraction (15 hand-written events: 11 to keep, 4 to skip) | 15/15 on loose checks | 15/15 with the strict date check |
+| Decisions (12 pairs) | 11/12 | 12/12 |
+| Latency | extraction p50 1.7 s, decision p50 0.8 s | same |
+
+How it got there (the useful part): the first run looked perfect on extraction, but I had accepted a past date for a future anniversary with a lenient regex.
+Tightening the check exposed it, the prompt instruction alone didn't fix it, and a code rule did. The one decision failure was the central "preference changed"
+case; a prompt rule fixed the model, and the code guard (D-027) now protects against the same mistake anyway.
+**Caveat:** I tuned prompts on these same cases, so the scores are optimistic. They are small and hand-written. A fresh held-out set is still needed.
+
+### Next
+M4: always-on profile block, `memory_search` / `memory_save` tools behind a permission check, a chat loop with log-before-act, and a CLI.

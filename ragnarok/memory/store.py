@@ -323,6 +323,13 @@ class MemoryStore:
                 [(memory_id, e) for e in event_ids],
             )
 
+    def link(self, from_id: int, to_id: int, relation: str) -> None:
+        """Record a relation (derived_from, related, contradicts) between two memories."""
+        with self.vault.transaction() as con:
+            con.execute(
+                "INSERT OR IGNORE INTO memory_links VALUES (?, ?, ?)", (from_id, to_id, relation)
+            )
+
     def archive(self, memory_id: int) -> None:
         mem = self.get(memory_id)
         if mem is None or mem.status != "active":

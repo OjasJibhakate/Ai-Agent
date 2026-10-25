@@ -5,8 +5,10 @@ Load options never vary per request, because a changed option makes Ollama reloa
 
 from __future__ import annotations
 
+import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
@@ -18,6 +20,17 @@ EMBED_MODEL = "nomic-embed-text"
 CHAT_MODEL = "qwen3.5:4b"
 NUM_CTX = 16384  # identical on every request; a different value makes Ollama reload the model
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+@dataclass
+class ChatResult:
+    """A finished chat turn: text, requested tool calls, and Ollama's timing counters."""
+
+    content: str = ""
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    first_token_ms: float | None = None
+    eval_count: int = 0
+    prompt_eval_count: int = 0
 
 
 class GatewayError(Exception):
@@ -85,6 +98,69 @@ class Gateway:
                         yield json.loads(line)
         except httpx.HTTPError as exc:
             raise GatewayError(f"chat failed: {type(exc).__name__}") from exc
+
+    async def chat(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        on_delta: Callable[[str], Awaitable[None]] | None = None,
+        num_predict: int = 1024,
+        temperature: float = 0.3,
+    ) -> ChatResult:
+        """Stream a chat turn, forwarding text to `on_delta`, and return the assembled result."""
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        result = ChatResult()
+        async for chunk in self.chat_stream(
+            messages, tools=tools, num_predict=num_predict, temperature=temperature
+        ):
+            msg = chunk.get("message", {})
+            if text := msg.get("content"):
+                if result.first_token_ms is None:
+                    result.first_token_ms = (loop.time() - start) * 1000
+                result.content += text
+                if on_delta:
+                    await on_delta(text)
+            result.tool_calls.extend(msg.get("tool_calls") or [])
+            if chunk.get("done"):
+                result.eval_count = chunk.get("eval_count", 0)
+                result.prompt_eval_count = chunk.get("prompt_eval_count", 0)
+        return result
+
+    async def chat_json(
+        self,
+        messages: list[dict[str, Any]],
+        schema: dict[str, Any],
+        *,
+        model: str = CHAT_MODEL,
+        num_predict: int = 512,
+        seed: int = 7,
+    ) -> dict[str, Any]:
+        """One non-streaming call whose output must match `schema` (temperature 0, fixed seed)."""
+        check_policy(self.base_url, model)
+        body = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            "think": False,
+            "format": schema,
+            "keep_alive": -1,
+            "options": {
+                "num_ctx": NUM_CTX,
+                "num_predict": num_predict,
+                "temperature": 0,
+                "seed": seed,
+            },
+        }
+        try:
+            resp = await self._client.post("/api/chat", json=body)
+            resp.raise_for_status()
+            return json.loads(resp.json()["message"]["content"])
+        except httpx.HTTPError as exc:
+            raise GatewayError(f"chat_json failed: {type(exc).__name__}") from exc
+        except (ValueError, KeyError) as exc:
+            raise GatewayError("chat_json returned invalid JSON") from exc
 
     async def aclose(self) -> None:
         await self._client.aclose()

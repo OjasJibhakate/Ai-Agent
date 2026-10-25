@@ -1,0 +1,230 @@
+{
+  "date": "2026-10-25T12:24:12+00:00",
+  "model": "qwen3.5:4b",
+  "extraction": {
+    "accuracy": 1,
+    "kept_correctly": 1,
+    "skipped_correctly": 1,
+    "latency_ms": {
+      "p50": 1707.686400000057,
+      "max": 4351.9194999998945
+    },
+    "cases": [
+      {
+        "text": "I prefer meetings after 2pm",
+        "ok": true,
+        "got": [
+          "User prefers meetings scheduled after 2 PM."
+        ]
+      },
+      {
+        "text": "My sister Meera moved to Bangalore last month",
+        "ok": true,
+        "got": [
+          "Meera lives in Bangalore."
+        ]
+      },
+      {
+        "text": "thanks, that works",
+        "ok": true,
+        "got": []
+      },
+      {
+        "text": "What's the weather like today?",
+        "ok": true,
+        "got": []
+      },
+      {
+        "text": "Remind me that my dentist appointment is on 3 November at 10:30",
+        "ok": true,
+        "got": [
+          "Dentist appointment scheduled for 2026-11-03 at 10:30."
+        ]
+      },
+      {
+        "text": "I'm allergic to penicillin",
+        "ok": true,
+        "got": [
+          "The user is allergic to penicillin."
+        ]
+      },
+      {
+        "text": "I started working on the billing service, it uses Python 3.12 and FastAPI",
+        "ok": true,
+        "got": [
+          "The user is building a billing service using Python 3.12 and FastAPI."
+        ]
+      },
+      {
+        "text": "Tomorrow I have a flight to Delhi at 6am",
+        "ok": true,
+        "got": [
+          "User has a flight to Delhi on 2026-10-26 at 06:00."
+        ]
+      },
+      {
+        "text": "I don't eat eggs, I'm vegetarian",
+        "ok": true,
+        "got": [
+          "The user is a vegetarian and does not eat eggs."
+        ]
+      },
+      {
+        "text": "lol ok",
+        "ok": true,
+        "got": []
+      },
+      {
+        "text": "Can you draft an email to Ravi about the budget?",
+        "ok": true,
+        "got": []
+      },
+      {
+        "text": "Ravi is my manager and we have a 1:1 every Monday at 11",
+        "ok": true,
+        "got": [
+          "Ravi is the user's manager.",
+          "The user has a weekly 1:1 meeting with Ravi on Mondays at 11:00."
+        ]
+      },
+      {
+        "text": "I hate it when people call me before 10am",
+        "ok": true,
+        "got": [
+          "The user dislikes being called before 10:00 AM."
+        ]
+      },
+      {
+        "text": "The test test_refund_rounding is failing on port 8089 in the payments service",
+        "ok": true,
+        "got": [
+          "The test test_refund_rounding fails on port 8089 in the payments service."
+        ]
+      },
+      {
+        "text": "My anniversary is on 14 February",
+        "ok": true,
+        "got": [
+          "User's anniversary is on 2027-02-14."
+        ]
+      }
+    ]
+  },
+  "decisions": {
+    "accuracy": 1,
+    "latency_ms": {
+      "p50": 812.9640499998914,
+      "max": 899.8966000003747
+    },
+    "cases": [
+      {
+        "stored": [
+          "Prefers meetings after 14:00"
+        ],
+        "new": "Prefers meetings after 15:00 now",
+        "action": "SUPERSEDE",
+        "target": 1,
+        "ok": true
+      },
+      {
+        "stored": [
+          "Manager is Anil"
+        ],
+        "new": "Manager is now Sunita",
+        "action": "SUPERSEDE",
+        "target": 1,
+        "ok": true
+      },
+      {
+        "stored": [
+          "Likes green tea"
+        ],
+        "new": "Likes coffee in the morning",
+        "action": "ADD",
+        "target": null,
+        "ok": true
+      },
+      {
+        "stored": [
+          "Allergic to penicillin"
+        ],
+        "new": "Allergic to penicillin antibiotics",
+        "action": "UPDATE",
+        "target": 1,
+        "ok": true
+      },
+      {
+        "stored": [
+          "Lives in Pune"
+        ],
+        "new": "Lives in Bengaluru",
+        "action": "SUPERSEDE",
+        "target": 1,
+        "ok": true
+      },
+      {
+        "stored": [
+          "Sister Meera lives in Bangalore"
+        ],
+        "new": "Sister Meera is a doctor",
+        "action": "ADD",
+        "target": null,
+        "ok": true
+      },
+      {
+        "stored": [
+          "Uses VS Code as the main editor"
+        ],
+        "new": "Switched to Neovim as the main editor",
+        "action": "SUPERSEDE",
+        "target": 1,
+        "ok": true
+      },
+      {
+        "stored": [
+          "Dentist appointment on 3 November at 10:30"
+        ],
+        "new": "Dentist appointment is on 3 November at 10:30 AM",
+        "action": "UPDATE",
+        "target": 1,
+        "ok": true
+      },
+      {
+        "stored": [
+          "Gym day is Tuesday"
+        ],
+        "new": "Reads on the Kindle before bed",
+        "action": "ADD",
+        "target": null,
+        "ok": true
+      },
+      {
+        "stored": [
+          "Sprint length is two weeks"
+        ],
+        "new": "Sprints last 14 days",
+        "action": "UPDATE",
+        "target": 1,
+        "ok": true
+      },
+      {
+        "stored": [
+          "Phone is a Pixel 6"
+        ],
+        "new": "Bought a new iPhone 15 and uses it now",
+        "action": "SUPERSEDE",
+        "target": 1,
+        "ok": true
+      },
+      {
+        "stored": [
+          "Favourite language is Java"
+        ],
+        "new": "Also enjoys writing Go on weekends",
+        "action": "ADD",
+        "target": null,
+        "ok": true
+      }
+    ]
+  }
+}

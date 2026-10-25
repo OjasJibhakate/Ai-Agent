@@ -239,3 +239,19 @@ Format: context → decision → alternatives → consequences → revisit if.
 - **Consequences:** The cutoff is not a precise relevance filter: 47% of unanswerable queries still return something. Deciding relevance is left to
   the chat model, within the ~1,000-token memory budget.
 - **Revisit if:** the corpus grows past about 20k memories, or the embedding model changes (the cutoff is specific to `nomic-embed-text`).
+
+### D-027 — Ingestion rules enforced in code, not left to the 4B model
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Context:** The first real-model run of the M3 pipeline showed two failures that a good pass rate hid: the model labelled a changed value
+  ("meetings after 14:00" -> "after 15:00 now") as UPDATE, which in our pipeline would have kept the old value and lost the new one; and it
+  wrote a past date for a yearless future date ("anniversary on 14 February" became 2026-02-14 in October 2026).
+- **Decision:**
+  - An unusable decision (unknown action, or a target that isn't one of the neighbours shown to the model) becomes ADD. A failed decision call also becomes ADD. Nothing is ever deleted on a guess.
+  - UPDATE is applied as a plain reinforcement only when the new statement adds no words the stored one lacks; otherwise it is applied as SUPERSEDE, which keeps the new
+    detail and leaves the old version in the history.
+  - An inferred memory can never supersede a user-stated one; the two are linked as `contradicts` and both stay.
+  - The model can't claim more certainty than the evidence: `user_stated` needs a user message in the batch (else `observed` or `inferred`).
+  - A yearless date is moved to its next occurrence (`roll_past_dates`) unless the user gave a year or their wording is past tense ("went", "last", "ago"...).
+    This is a heuristic; the model labels nearly every dated item `episodic`, so memory type can't be used for it.
+  - If the model is down, events stay pending and are retried; assistant-only batches never reach the model.
+- **Consequences:** More superseded rows from reworded facts (cheap, and history is kept). The pipeline's safety no longer depends on prompt quality.

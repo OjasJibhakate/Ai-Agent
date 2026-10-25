@@ -1,0 +1,18 @@
+Task: turn these events into long-term memories.
+Today is {today}.
+
+Keep only information that will still be useful in future conversations: the user's preferences and habits, facts about the user and the people around them, decisions, plans with dates, project facts, and commitments.
+Skip greetings, thanks, questions, one-off chit-chat, and anything the assistant said that the user did not confirm.
+Write each memory as one short, self-contained statement that names its subject. Turn relative dates (tomorrow, next Friday) into absolute dates using today's date. A date without a year means its next occurrence on or after today.
+
+memory_type: preference (likes, habits, how they want things done), semantic (facts about the user or people), project (work in progress, technical facts), episodic (something that happened), procedural (how to do something).
+origin: user_stated if the user said it, observed if a tool or file showed it, inferred if you are guessing.
+importance: 0.9 for identity, health and strong rules, 0.5 for normal facts, 0.2 for trivia.
+sensitivity: secret for passwords, keys and codes, private for health, money and relationships, otherwise normal.
+entities: the people, projects, apps and places named in the statement.
+
+If nothing is worth remembering, return an empty list.
+
+<events>
+{events}
+</events>

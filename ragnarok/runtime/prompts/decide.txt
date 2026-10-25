@@ -1,0 +1,18 @@
+Task: decide how a new memory relates to the memories already stored.
+
+Actions:
+- ADD: new information that no stored memory covers.
+- UPDATE: a stored memory already says exactly this; the new one only repeats it in other words.
+- SUPERSEDE: the new memory gives a different value for the same thing as a stored memory: a changed time, number, name, place or choice (a new address, a new manager, a later meeting time). Words like "now", "actually" or "switched" usually mean SUPERSEDE.
+- NOOP: the new memory says nothing new.
+
+For UPDATE and SUPERSEDE, give the id of the stored memory it refers to. Otherwise target_id is null.
+Different things are not a contradiction: liking tea and liking coffee can both be true.
+Example: stored "Meets the team at 10:00", new "Meets the team at 11:00 now" -> SUPERSEDE, because the time changed.
+
+<candidate>
+{candidate}
+</candidate>
+<memories>
+{similar}
+</memories>
