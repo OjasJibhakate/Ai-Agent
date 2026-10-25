@@ -20,7 +20,7 @@ from typing import Protocol
 from pydantic import Field
 
 from ragnarok.policy.permissions import Risk
-from ragnarok.runtime.tools import Tool, ToolArgs, ToolResult
+from ragnarok.runtime.tools import CURRENT_TEXT, Tool, ToolArgs, ToolResult
 
 CACHE_SECONDS = 300
 # Never opened on the model's say-so: a shell or admin tool lets typed text become commands.
@@ -107,6 +107,18 @@ def resolve(query: str, apps: list[AppEntry]) -> tuple[str, list[AppEntry]]:
     )
 
 
+MORE_STEPS = re.compile(
+    r"\b(and|then|after that|also)\b.{0,60}\b(go|search|play|type|open|visit|find|watch|click|"
+    r"log|sign|navigate|browse|look|write|send)\b|\b(go to|search for|search on|navigate to)\b",
+    re.IGNORECASE,
+)
+
+
+def has_more_steps(user_text: str) -> bool:
+    """True for "open chrome and go to youtube", where opening the app is only the first step."""
+    return bool(MORE_STEPS.search(user_text))
+
+
 class OpenAppArgs(ToolArgs):
     name: str = Field(
         min_length=1, max_length=80, description="App name, like Steam or Microsoft Edge."
@@ -130,13 +142,15 @@ def app_tools(catalog: AppCatalog | None = None) -> list[Tool]:
         if REFUSED.search(app.name):
             return "I don't open command shells or admin tools. Please open that one yourself."
         await asyncio.to_thread(catalog.launch, app)
-        return ToolResult(f"Opened {app.name}.", final=True)
+        text = f"Opened {app.name}."
+        # "open chrome and go to youtube and search x": the model must carry on with the rest
+        return text if has_more_steps(CURRENT_TEXT.get()) else ToolResult(text, final=True)
 
     return [
         Tool(
             name="open_app",
-            description="Open an installed Windows app by name. Use it when the user asks to "
-            "open, launch or start a program such as Steam or Microsoft Edge.",
+            description="Open an installed Windows app by name, such as Steam or Notepad. "
+            "Use it to start a program; to visit a website use open_website instead.",
             args_model=OpenAppArgs,
             risk=Risk.R1,  # starts a program as the user; closing its window undoes it
             idempotent=False,  # a second call can open a second window

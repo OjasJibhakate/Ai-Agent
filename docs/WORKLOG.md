@@ -445,3 +445,14 @@ M5: consolidation, forgetting, undo for a wrong supersede, pin/unpin and export 
 
 ### Next
 Use it for a few days (`memory stats` shows what is happening); then a held-out evaluation set for extraction and retrieval.
+
+## 2026-10-25 (night) - "open chrome and go to yt and search carrymanati"
+
+- The owner's request opened Chrome and stopped. Two causes: no tool for web pages, and the fast-finish rule ending the turn after the first step (D-034).
+- Added `open_website` (URL built by code from a table of known sites; arbitrary addresses only if the user typed them; chrome/edge/firefox/default), made `open_app` yield on multi-step requests, and told the model to go straight to the website tool.
+- Real model, fake browser, six requests: Chrome + YouTube search (it kept the user's spelling "carrymanati"), YouTube search in Edge, Wikipedia in the default browser, an honest "I can't click to play the first video", a bare "open steam" still instant (0.9 s),
+  and an address the user typed. 1.0-2.6 s each.
+- One real launch: Chrome to `https://www.youtube.com/results?search_query=carryminati` (Chrome process count 19 to 20, call returned in 12 ms). I could not see the screen.
+- On this laptop the default browser is Edge, so "chrome" must start Chrome from its registered path; Firefox is not installed (the tool says so and falls back to the default).
+- Tests: **336 pass**. 53 new tests cover URL building for every known site, hostile addresses, the typed-by-user rule, browser fallback, the click/play limitation, and the exact request as a two-step turn.
+- Not done: correcting typos in search words (YouTube does its own "did you mean"); reading page contents; opening a specific video.

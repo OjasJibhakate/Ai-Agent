@@ -346,3 +346,20 @@ Format: context → decision → alternatives → consequences → revisit if.
   - **CLI:** `memory pin|unpin|correct|revert|export|stats|consolidate|prune|maintain|undo-summary`, `memory list --type`. Export needs `--yes-plaintext`.
 - **Consequences:** Identical summary text from two weeks is merged into one summary by the duplicate rule (the second week's sources attach to it). Grouping is by project and week, not by entity.
 - **Revisit if:** real use shows summaries lose too much, or weekly grouping is too coarse (try per-entity groups).
+
+### D-034 — `open_website`: the agent can open sites and searches, and stops cutting multi-step requests short
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Context:** The owner typed "open chrome and go to yt and search carrymanati". Chrome opened and nothing else happened, for two reasons: there was no tool that opens a web page, and the speed shortcut from D-030
+  (a successful `open_app` ends the turn) stopped the sentence after its first step.
+- **Decision:**
+  - `ragnarok/skills/web.py` adds `open_website(site, search?, browser?)`. The model names a site ("yt", "wikipedia") and search words; **code builds the URL** from a fixed table (YouTube, Google, Wikipedia, GitHub,
+    Stack Overflow, Reddit, Maps, Gmail, Drive, ChatGPT; common aliases) and URL-encodes the search text, so search text can never change the host or add parameters. Sites without a search page are searched through Google (`site:host words`).
+  - **Any other address opens only if the user typed it in the message being answered.** Text found in a file or a memory therefore cannot send the browser anywhere. Whatever was typed must still be an ordinary https domain: no `file:`,
+    `javascript:`, localhost, IP addresses, ports, embedded credentials, spaces or markup. 19 hostile forms are tested.
+  - **Browser choice:** `chrome`, `edge`, `firefox` or the default. Named browsers are started from their registered install path (Windows `App Paths`) with our validated URL as the only argument; if the named browser is missing the default is used and
+    the answer says so. (On this laptop the default is Edge, so "open chrome" has to launch Chrome itself.)
+  - **It opens pages; it cannot read, click or play anything on them.** If the message asks for that ("play the first video"), the tool says so and the model passes it on; the real model did.
+  - `open_app` now hands control back to the model when the message has more steps ("...and go to...", "...then search..."); a bare "open steam" still ends instantly. The prompt tells the model to use the website tool directly and not open the browser app first.
+  - Risk R1 (closing the tab undoes it), sandbox declared `full-access` (a browser runs as the user), network declared as "via the user's browser".
+- **Consequences:** The agent itself still makes no network connections; the browser does, as the user would. Reading page contents would be a separate, riskier skill (untrusted web text) and is not planned yet.
+- **Verified:** real model + fake browser on six requests (correct tool, URL and browser each time, 1-2.6 s); one real launch of Chrome to the YouTube search (a new Chrome process started; the page itself was not inspected).
