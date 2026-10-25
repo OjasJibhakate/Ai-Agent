@@ -80,13 +80,14 @@ def test_the_cat_wears_its_collar_and_bell_in_every_awake_pose(name):
 @pytest.mark.parametrize(
     "name", [n for n in POSED if n.startswith(("stand", "sit", "alert", "walk"))]
 )
-def test_the_awake_cat_has_green_eyes_pink_ears_and_a_pink_nose(name):
+def test_the_awake_cat_has_big_dark_eyes_with_green_pink_ears_and_nose_and_blush(name):
     rows = ALL[name]
     if name in ("stand_blink", "sit_blink"):
         assert count(rows, "G") == 0  # eyes shut
     else:
-        assert count(rows, "G") >= 8
+        assert count(rows, "G") >= 4 and count(rows, "E") >= 20  # two big dark eyes, green rim
     assert count(rows, "P") >= 6
+    assert count(rows, "B") >= 4  # pink cheeks
 
 
 def test_the_tail_has_stripes_and_a_white_tip_and_the_socks_are_white():
@@ -110,7 +111,7 @@ def test_eyes_look_the_way_they_are_told_to():
 def test_the_yawn_opens_the_mouth_in_stages_and_the_sleeper_has_its_eyes_shut():
     small, wide = count(ALL["yawn0"], "M"), count(ALL["yawn1"], "M")
     assert 0 < small < wide and count(ALL["yawn1"], "T") >= 2  # a tongue at the widest
-    assert count(ALL["sleep2"], "G") == 0 and count(ALL["loaf"], "G") >= 8  # shut, then open
+    assert count(ALL["sleep2"], "G") == 0 and count(ALL["loaf"], "G") >= 4  # shut, then open
 
 
 def test_walking_changes_the_legs_and_standing_breathing_changes_one_row():
@@ -133,3 +134,43 @@ def test_the_overlays_sit_in_the_free_space_above_the_cat_and_do_not_replace_it(
         )
         < 40
     )
+
+
+def first_row(rows: list[str], columns: range, only: str = "") -> int:
+    """The top row that has something drawn (or one of the `only` letters) in these columns."""
+    for y, row in enumerate(rows):
+        if any(row[x] != "." and (not only or row[x] in only) for x in columns):
+            return y
+    raise AssertionError("nothing there")
+
+
+def test_a_tilted_head_has_one_ear_higher_and_the_far_eye_lower():
+    straight, a, b = ALL["sit"], ALL["sit_tilt0"], ALL["sit_tilt1"]
+    assert a != straight and b != straight and a != b
+    left_eye, right_eye = range(22, 26), range(30, 34)  # the head is centred on column 28
+    assert first_row(straight, left_eye, "E") == first_row(straight, right_eye, "E")
+    assert first_row(a, right_eye, "E") - first_row(a, left_eye, "E") == 2  # tilted one way
+    assert first_row(b, left_eye, "E") - first_row(b, right_eye, "E") == 2  # and the other
+    left_ear, right_ear = range(19, 28), range(29, 38)
+    assert first_row(a, left_ear) < first_row(a, right_ear)
+    assert first_row(b, right_ear) < first_row(b, left_ear)
+
+
+def test_the_wagging_tail_is_the_only_difference_between_the_two_happy_pictures():
+    a, b = ALL["happy"], ALL["happy_b"]
+    differences = [
+        (x, y)
+        for y, (p, q) in enumerate(zip(a, b, strict=True))
+        for x, (u, v) in enumerate(zip(p, q, strict=True))
+        if u != v
+    ]
+    assert differences and all(x < 16 and y > 25 for x, y in differences)  # low, behind the cat
+
+
+def test_the_cheeks_are_pink_and_sit_under_the_eyes_not_on_the_whiskers():
+    rows = ALL["sit"]
+    blush = [(x, y) for y, r in enumerate(rows) for x, ch in enumerate(r) if ch == "B"]
+    assert len(blush) >= 4
+    eye_rows = [y for y, r in enumerate(rows) if "E" in r[22:26]]
+    assert all(y > min(eye_rows) for _, y in blush)  # below the top of the eyes
+    assert {x < 28 for x, _ in blush} == {True, False}  # one cheek on each side

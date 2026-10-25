@@ -8,6 +8,7 @@ the recovery code is shown once, at creation.
 from __future__ import annotations
 
 import tkinter as tk
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,6 +24,25 @@ MIN_LENGTH = 8
 class Answer:
     passphrase: str
     automatic: bool = False
+
+
+def remember_on_this_account(home: Path, vault_key: bytes) -> bool:
+    """Seal the vault key to this Windows account (DPAPI) so the next start asks nothing.
+    False if Windows would not do it; the passphrase keeps working either way."""
+    try:
+        keys.enable_dpapi(home / DPAPI_FILE, vault_key)
+    except (keys.KeystoreError, OSError):
+        return False
+    return True
+
+
+def forget_this_account(home: Path) -> None:
+    """Back to asking for the passphrase at every start."""
+    keys.disable_dpapi(home / DPAPI_FILE)
+
+
+def remembered(home: Path) -> bool:
+    return (home / DPAPI_FILE).exists()
 
 
 def _dialog(
@@ -61,6 +81,10 @@ def _dialog(
             win, text="Unlock automatically on this Windows account", variable=keep, fg=t.DIM,
             bg=t.BG, selectcolor=t.PANEL, activebackground=t.BG, activeforeground=t.TEXT, font=t.SMALL,
         ).pack(anchor="w", padx=18, pady=(8, 0))  # fmt: skip
+        tk.Label(
+            win, text="Then anyone signed in to Windows as you can open it without the passphrase.",
+            fg=t.DIM, bg=t.BG, font=t.SMALL, wraplength=320, justify="left",
+        ).pack(anchor="w", padx=40)  # fmt: skip
     message = tk.Label(
         win, text=error, fg=t.CORAL, bg=t.BG, font=t.SMALL, wraplength=320, justify="left"
     )
@@ -142,8 +166,8 @@ def _show_recovery(root: tk.Tk, code: str) -> None:
     root.wait_window(win)
 
 
-def first_run(root: tk.Tk, home: Path) -> bytes | None:
-    answer = _dialog(
+def first_run(root: tk.Tk, home: Path, ask: Callable[..., Answer | None] = _dialog) -> bytes | None:
+    answer = ask(
         root, "Set up Ragnarok", "Choose a passphrase. It encrypts everything I remember about you, "
         "and only you hold it.", repeat=True, automatic=True,
     )  # fmt: skip
@@ -153,31 +177,37 @@ def first_run(root: tk.Tk, home: Path) -> bytes | None:
     created = keys.create_keystore(home / KEY_FILE, answer.passphrase)
     Vault.open(home / VAULT_FILE, created.vault_key).close()
     if answer.automatic:
-        keys.enable_dpapi(home / DPAPI_FILE, created.vault_key)
+        remember_on_this_account(home, created.vault_key)
     _show_recovery(root, created.recovery_code)
     return created.vault_key
 
 
-def unlock(root: tk.Tk, home: Path) -> bytes | None:
-    """The vault key, or None if the owner closed the dialog or ran out of tries."""
+def unlock(root: tk.Tk, home: Path, ask: Callable[..., Answer | None] = _dialog) -> bytes | None:
+    """The vault key, or None if the owner closed the dialog or ran out of tries.
+
+    `ask` shows the passphrase dialog (it is a parameter so tests can answer for the owner)."""
     keystore = home / KEY_FILE
     if not keystore.exists():
-        return first_run(root, home)
-    if (home / DPAPI_FILE).exists():
+        return first_run(root, home, ask)
+    if remembered(home):
         try:
             return keys.unlock_with_dpapi(home / DPAPI_FILE)
         except keys.KeystoreError:
-            pass  # fall back to asking
+            pass  # another account, or a damaged file: fall back to asking
     error = ""
     for _ in range(3):
-        answer = _dialog(
+        answer = ask(
             root, "Unlock Ragnarok", "Enter your passphrase to open your memory.",
-            repeat=False, automatic=False, error=error,
+            repeat=False, automatic=True, error=error,
         )  # fmt: skip
         if answer is None:
             return None
         try:
-            return keys.unlock_with_passphrase(keystore, answer.passphrase)
+            key = keys.unlock_with_passphrase(keystore, answer.passphrase)
         except keys.WrongSecret:
             error = "That is not the right passphrase."
+            continue
+        if answer.automatic:  # only after the right passphrase, never before
+            remember_on_this_account(home, key)
+        return key
     return None

@@ -54,6 +54,8 @@ LIVELY_DURATION = {
     "yawn": (2.0, 2.4), "scratch": (2.2, 3.6), "play": (0.5, 0.5), "stretch": (2.6, 3.2),
 }  # fmt: skip
 WAKEFUL_AT_START = 60.0  # seconds after it appears before it may doze off
+TILT_EVERY = 7.0  # a cat watching the pointer tilts its head twice in this many seconds...
+TILT_FOR = 1.3  # ...for this long each time
 MAX_STROLL = 260.0  # a calm walk goes at most this far
 PLAY_REACH = 46.0  # how far it dashes when it bats at nothing
 FOLLOW_MODES = ("chase", "watch", "pounce", "purr")
@@ -424,12 +426,24 @@ class CatBrain:
             return True
         return False
 
+    def _curious_tilt(self) -> str:
+        """While it watches the pointer it tilts its head, as soon as it notices and now and then
+        after, one way and then the other. "" is no tilt."""
+        phase = self.clock % TILT_EVERY
+        if phase < TILT_FOR:
+            return "0"
+        if TILT_EVERY / 2 <= phase < TILT_EVERY / 2 + TILT_FOR:
+            return "1"
+        return ""
+
     def _frame(self) -> str:
         mode = self.mode
         if mode == "walk":
             return f"walk{int(self.clock / STEP_TIME) % 4}"
         if mode == "chase":
             return f"walk{int(self.clock / (STEP_TIME * 0.55)) % 4}"
+        if mode == "watch" and (tilt := self._curious_tilt()):
+            return f"sit_tilt{tilt}"
         if mode in ("sit", "watch"):
             if self._micro == "swish":
                 return f"sit_swish{int(self.clock_total / 0.22) % 2}"
@@ -460,10 +474,11 @@ class CatBrain:
             return "alert"
         if mode == "pounce":
             return "pounce"
+        wag = "happy_b" if int(self.clock_total / 0.3) % 2 else "happy"  # the tail wags
         if mode == "purr":
-            return "happy"
+            return wag
         if mode == "happy":
-            return "jump" if int(self.clock / 0.25) % 2 == 0 and self.clock < 0.9 else "happy"
+            return "jump" if int(self.clock / 0.25) % 2 == 0 and self.clock < 0.9 else wag
         if mode in ("carried", "fall"):
             return f"carried{int(self.clock / 0.18) % 2}"
         return "stand"

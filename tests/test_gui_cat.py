@@ -217,10 +217,36 @@ def move_pointer(b: CatBrain, x: float, y: float, seconds: float, dt: float = 0.
 def test_a_pointer_resting_on_the_cat_makes_it_purr_and_stopping_ends_it():
     b = watcher()
     poses = move_pointer(b, b.x + 39, FLOOR - 30, 2.0)
-    assert poses[-1].mode == "purr" and poses[-1].frame == "happy"
+    assert poses[-1].mode == "purr" and poses[-1].frame in ("happy", "happy_b")
     assert poses[10].mode != "purr"  # not at once: it takes a moment
     after = move_pointer(b, 100, 300, 1.5)  # the pointer leaves
     assert after[-1].mode != "purr"
+
+
+def test_a_purring_cat_wags_its_tail():
+    b = watcher()
+    poses = move_pointer(b, b.x + 39, FLOOR - 30, 4.0)
+    frames = [p.frame for p in poses if p.mode == "purr"]
+    assert set(frames) == {"happy", "happy_b"}  # the tail goes one way, then the other
+    switches = sum(frames[i] != frames[i + 1] for i in range(len(frames) - 1))
+    assert 6 <= switches <= 14  # about every 0.3 s
+
+
+def test_a_cat_that_notices_the_pointer_tilts_its_head_then_tilts_it_the_other_way():
+    b = watcher(x=200)
+    poses = move_pointer(b, 420, FLOOR + 20, 20.0)
+    watching = [p for p in poses if p.mode == "watch"]
+    frames = [p.frame for p in watching]
+    assert watching[0].frame == "sit_tilt0"  # curious as soon as it settles down to watch
+    assert "sit_tilt1" in frames  # and again, the other way
+    share = sum(f.startswith("sit_tilt") for f in frames) / len(frames)
+    assert 0.25 < share < 0.5  # now and then, not the whole time
+
+
+def test_a_cat_on_its_own_never_tilts_its_head():
+    b = watcher(x=600)
+    frames = {b.step(0.1).frame for _ in range(3000)}  # five minutes, nobody near
+    assert not {f for f in frames if "tilt" in f}
 
 
 def test_a_pointer_far_away_on_the_taskbar_is_ignored():

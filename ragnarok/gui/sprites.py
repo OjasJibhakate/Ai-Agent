@@ -59,6 +59,8 @@ def frames() -> dict[str, list[str]]:
     out["sit_ear"] = catart.sit(ears="twitch").rows()
     for look in LOOKS:
         out[f"sit@{look}"] = catart.sit(look=look).rows()
+    out["sit_tilt0"] = catart.sit(tilt=1, ears="up").rows()  # curious: the head turns a little...
+    out["sit_tilt1"] = catart.sit(tilt=-1, ears="up").rows()  # ...one way, then the other
     # ---- yawning, scratching, grooming
     out["yawn0"] = catart.sit(eyes="squint", mouth="open1").rows()
     out["yawn1"] = catart.sit(eyes="squint", mouth="open2", ears="back").rows()
@@ -77,14 +79,15 @@ def frames() -> dict[str, list[str]]:
     out["stretch1"] = catart.stretch(1).rows()
     # ---- reacting
     out["alert"] = overlay(catart.stand(eyes="wide", ears="up", tail="up2").rows(), BANG, 41, 0)
-    out["happy"] = overlay(catart.sit(eyes="squint", tail="floor2").rows(), HEART, 35, 0)
+    out["happy"] = overlay(catart.sit(eyes="squint", tail="floor2").rows(), HEART, 38, 0)
+    out["happy_b"] = overlay(catart.sit(eyes="squint", tail="floor").rows(), HEART, 38, 0)  # wag
     tucked = ((0, 6), (0, 6), (0, 6), (0, 6))
-    out["jump"] = overlay(catart.stand(tucked, eyes="squint", tail="up2").rows(), HEART, 38, 0)
+    out["jump"] = overlay(catart.stand(tucked, eyes="squint", tail="up2").rows(), HEART, 39, 0)
     out["pounce"] = catart.stand(tucked, eyes="wide", ears="back", tail="low").rows()
     dangle = ((0, -3), (0, -4), (0, -3), (0, -4))
     out["carried0"] = catart.stand(dangle, rise=7, eyes="wide", tail="low").rows()
     swing = ((1, -3), (-1, -4), (1, -3), (-1, -4))
     out["carried1"] = catart.stand(swing, rise=7, eyes="wide", tail="up").rows()
     for n in (1, 2, 3):  # thinking: dots over its head
-        out[f"think{n}"] = overlay(catart.sit().rows(), DOTS[n - 1], 35, 3)
+        out[f"think{n}"] = overlay(catart.sit().rows(), DOTS[n - 1], 36, 1)
     return out

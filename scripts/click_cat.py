@@ -11,7 +11,9 @@ from ragnarok.skills.screen.capture import WindowsScreen
 left, top, right, bottom = 0, 900, 1920, 1035
 frame = WindowsScreen((left, top, right, bottom)).grab(max_width=4000)
 rgb = frame.rgb.astype(int)
-fur = (abs(rgb[..., 0] - 0xF2) < 14) & (abs(rgb[..., 1] - 0xA6) < 14) & (abs(rgb[..., 2] - 0x5A) < 14)
+fur = (
+    (abs(rgb[..., 0] - 0xF2) < 14) & (abs(rgb[..., 1] - 0xA6) < 14) & (abs(rgb[..., 2] - 0x5A) < 14)
+)
 ys, xs = np.nonzero(fur)
 if len(xs) < 30:
     print("cat not found")

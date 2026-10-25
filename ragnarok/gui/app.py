@@ -115,6 +115,11 @@ class CatApp:
         self.menu.add_checkbutton(
             label="Playful (busier cat)", variable=self.lively_var, command=self._toggle_lively
         )
+        self.auto_var = tk.BooleanVar(value=unlock.remembered(home))
+        self.menu.add_checkbutton(
+            label="Unlock without passphrase (this Windows account)", variable=self.auto_var,
+            command=self._toggle_auto_unlock,
+        )  # fmt: skip
         self.menu.add_separator()
         self.menu.add_command(label="Quit Ragnarok", command=self.quit)
 
@@ -255,6 +260,13 @@ class CatApp:
     def _toggle_chase(self) -> None:
         self.brain.chase = self.chase_var.get()
 
+    def _toggle_auto_unlock(self) -> None:
+        """On: seal the key to this Windows account. Off: ask for the passphrase again next time."""
+        if self.auto_var.get():
+            self.auto_var.set(unlock.remember_on_this_account(self.home, self.key))
+        else:
+            unlock.forget_this_account(self.home)
+
     def _carry_the_chat(self, mode: str) -> None:
         """If the cat is moved while the chat is open, the chat goes with it."""
         moving = mode in ("carried", "fall")
@@ -263,6 +275,7 @@ class CatApp:
         self._was_moving = moving
 
     def _menu(self, event: tk.Event) -> None:
+        self.auto_var.set(unlock.remembered(self.home))  # the file may have changed since last time
         self.menu.tk_popup(event.x_root, event.y_root)
 
     # ---- the chat -------------------------------------------------------------------------------------

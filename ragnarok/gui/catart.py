@@ -26,6 +26,7 @@ PALETTE: dict[str, str | None] = {
     "W": "#fff4e3",  # muzzle, belly, socks, tail tip
     "V": "#e3d3bb",  # the same white in shadow (the far socks)
     "P": "#f48fb1",  # nose, inner ears
+    "B": "#ff9aae",  # blush on the cheeks
     "E": "#1b1b2f",  # pupils, mouth line
     "G": "#8fdc7f",  # eyes
     "w": "#f6ecdb",  # whiskers, the glint in an eye
@@ -157,47 +158,57 @@ def head(
     ears: str = "normal",
     tilt: int = 0,
 ) -> None:
-    """The face: ears, head, white muzzle, eyes, nose, mouth, whiskers."""
+    """The face, made to be cute: a big round head, big ears, big glossy eyes set low, a tiny nose
+    and mouth, and pink cheeks. `tilt` (-1, 0, 1) turns the head a little, the way a cat does when
+    something catches its interest."""
     up = {"normal": 0, "up": 1, "twitch": 0, "back": -1, "flat": -2}[ears]
     twitch = -1 if ears == "twitch" else 0
+    up_l, up_r = up + tilt, up - tilt  # a tilted head has one ear higher than the other
     # ears (behind the head)
-    left = [(cx - 6.5, cy - 3), (cx - 5.2, cy - 8.5 - up), (cx - 1.0, cy - 5)]
-    right = [(cx + 1.0, cy - 5), (cx + 5.2 + twitch, cy - 8.5 - up), (cx + 6.5, cy - 3)]
+    left = [(cx - 8.8, cy - 2.5), (cx - 7.6, cy - 10.8 - up_l), (cx - 3.0, cy - 5.8)]
+    right = [(cx + 3.0, cy - 5.8), (cx + 7.6 + twitch, cy - 10.8 - up_r), (cx + 8.8, cy - 2.5)]
     c.part(Canvas.polygon(left))
     c.part(Canvas.polygon(right))
     c.paint(
-        Canvas.polygon([(cx - 5.2, cy - 4.4), (cx - 4.6, cy - 7.0 - up), (cx - 2.6, cy - 5)]), "P"
+        Canvas.polygon([(cx - 7.4, cy - 4.4), (cx - 7.0, cy - 8.4 - up_l), (cx - 4.4, cy - 5.8)]),
+        "P",
     )
     c.paint(
         Canvas.polygon(
-            [(cx + 2.6, cy - 5), (cx + 4.6 + twitch, cy - 7.0 - up), (cx + 5.2, cy - 4.4)]
+            [(cx + 4.4, cy - 5.8), (cx + 7.0 + twitch, cy - 8.4 - up_r), (cx + 7.4, cy - 4.4)]
         ),
         "P",
     )
-    # head, with cheek tufts
+    # head, a round dome with fluffy cheek tufts
     skull = (
-        Canvas.ellipse(cx, cy, 7.2, 5.6)
-        | Canvas.ellipse(cx - 5.5, cy + 2.5, 2.2, 2.0)
-        | Canvas.ellipse(cx + 5.5, cy + 2.5, 2.2, 2.0)
+        Canvas.ellipse(cx, cy, 8.8, 6.8)
+        | Canvas.ellipse(cx, cy - 0.6, 7.6, 7.2)
+        | Canvas.ellipse(cx - 7.0, cy + 3.2, 2.2, 2.2)
+        | Canvas.ellipse(cx + 7.0, cy + 3.2, 2.2, 2.2)
     )
     c.part(skull)
-    c.paint(Canvas.ellipse(cx, cy + 3, 3.4, 2.2), "W", only_on="OLSD")  # the white muzzle
-    c.paint(
-        {(int(cx), int(cy - 5)), (int(cx - 1), int(cy - 4)), (int(cx + 1), int(cy - 4))},
-        "D",
-        only_on="OLS",
-    )  # the M on a tabby's forehead
-    ex_l, ex_r, ey = int(cx - 4), int(cx + 2), int(cy - 1)
-    for ex in (ex_l, ex_r):
-        draw_eye(c, ex, ey, eyes, look)
-    # nose and mouth
-    nx, ny = int(cx - 1), int(cy + 2)
+    c.paint(Canvas.ellipse(cx, cy + 4, 3.6, 2.4), "W", only_on="OLSD")  # the small white muzzle
+    c.paint(  # the tabby "M" on the forehead
+        {(int(cx - 4), int(cy - 6)), (int(cx - 2), int(cy - 6)), (int(cx + 1), int(cy - 6)),
+         (int(cx + 3), int(cy - 6)), (int(cx - 1), int(cy - 5)), (int(cx), int(cy - 5))},
+        "D", only_on="OLS",
+    )  # fmt: skip
+    ey = int(cy)
+    for ex, dy in ((int(cx - 6), -tilt), (int(cx + 2), tilt)):  # the far eye drops when tilted
+        draw_eye(c, ex, ey + dy, eyes, look)
+    # blush, under the outer corner of each eye
+    cheeks = {(int(cx - 8 + k), ey + 4 + j) for k in range(2) for j in range(1)}
+    cheeks |= {(int(cx + 7 - k), ey + 4 + j) for k in range(2) for j in range(1)}
+    c.paint(cheeks, "B", only_on="OLSWD")
+    # nose and mouth (tiny, close together, which is most of what makes a face look cute)
+    nx, ny = int(cx - 1), int(cy + 3)
     c.put(nx, ny, "P")
     c.put(nx + 1, ny, "P")
     if mouth == "closed":
         c.put(nx - 1, ny + 1, "E")
+        c.put(nx, ny + 2, "E")
+        c.put(nx + 1, ny + 2, "E")
         c.put(nx + 2, ny + 1, "E")
-        c.put(nx, ny + 2, "E") if tilt else None
     else:
         size = 3 if mouth == "open2" else 2
         for yy in range(ny + 1, ny + 1 + size):
@@ -205,35 +216,36 @@ def head(
                 c.put(xx, yy, "M")
         c.paint({(nx, ny + size), (nx + 1, ny + size)}, "T")  # a pink tongue
     # whiskers go on last, only over the empty background
-    for sign, base in ((-1, cx - 6.5), (1, cx + 6.5)):
-        for dy, reach in ((1, 5), (3, 5)):
+    for sign, base in ((-1, cx - 9.0), (1, cx + 9.0)):
+        for dy, spread, reach in ((2, -1, 4), (4, 1, 4)):  # one fans up, one fans down
             for i in range(1, reach + 1):
-                x, y = int(base + sign * i), int(cy + dy + (i // 3))
+                x, y = int(base + sign * i), int(cy + dy + spread * (i // 3))
                 if c.at(x, y) == ".":
                     c.put(x, y, "w")
 
 
 def draw_eye(c: Canvas, x: int, y: int, state: str, look: int) -> None:
-    if state == "closed":
-        for dx in range(3):
-            c.put(x + dx, y + 1, "E")
+    """A big, dark, glossy eye 4 wide: a bright glint at the top and a green gleam below it.
+    `look` slides the glint and the gleam toward what the cat is watching."""
+    if state == "closed":  # a sleepy "u"
+        for dx, dy in ((0, 1), (1, 2), (2, 2), (3, 1)):
+            c.put(x + dx, y + dy, "E")
         return
-    if state == "squint":
-        for dx in range(3):
-            c.put(x + dx, y + 1, "D")
-        c.put(x, y, "D")
-        c.put(x + 2, y, "D")
+    if state == "squint":  # a happy "^"
+        for dx, dy in ((0, 2), (1, 1), (2, 1), (3, 2)):
+            c.put(x + dx, y + dy, "E")
         return
-    height = 4 if state == "wide" else 3
+    height = 5 if state == "wide" else 4
     for dy in range(height):
-        for dx in range(3):
-            c.put(x + dx, y + dy, "G")
-    c.put(x + 1 + look, y, "E")  # the slit pupil, shifted to look toward something
-    c.put(x + 1 + look, y + 1, "E")
-    c.put(x + 1 + look, y + 2, "E")
-    if height == 4:
-        c.put(x + 1 + look, y + 3, "E")
-    c.put(x, y, "w")  # the glint
+        for dx in range(4):
+            if dy in (0, height - 1) and dx in (0, 3):
+                continue  # round the corners
+            c.put(x + dx, y + dy, "E")
+    for dx in (1, 2):
+        c.put(x + dx, y + height - 1, "G")  # a crescent of green along the bottom of the eye
+    c.put(
+        x + 1 + look, y + 1, "w"
+    )  # the glint that makes the eye look wet (it moves with the look)
 
 
 def collar(c: Canvas, cx: float, cy: float) -> None:
@@ -299,8 +311,8 @@ def stand(
         if i == 1:
             c.part({(x, y + dy) for x, y in Canvas.ellipse(14.5, 22.5, 4.4, 4.6)})
         leg(c, bases[i], swing, up, floor=34 - lift, top=24 + dy)
-    head(c, 34, 12 + dy, **face)
-    collar(c, 33, 17 + dy)
+    head(c, 32, 13 + dy, **face)
+    collar(c, 31, 19 + dy)
     return c
 
 
@@ -332,21 +344,17 @@ def sit(
     leg(c, 27, 0, 0, floor=34, top=26 + dy, width=3.0)
     for k in range(3):
         c.paint({(14 + k * 3 + j, 22 + dy + k) for j in range(2)}, "D", only_on="OLS")
-    if paw_up:
-        # a hind leg swings up to the head to scratch, or a front paw comes up to the mouth
-        if paw_up.startswith("scratch"):
-            swing = 1 if paw_up.endswith("1") else 0
-            thigh = Canvas.stroke(
-                [(14, 29 + dy), (12 - swing, 21 + dy), (15 - swing, 14 + dy)], 3.2
-            )
-            c.part(thigh)
-            c.paint(Canvas.ellipse(15 - swing, 13.5 + dy, 1.6, 1.2), "W", only_on="OLSD")
-        else:
-            lift = 1 if paw_up.endswith("1") else 0
-            c.part(Canvas.stroke([(28, 27 + dy), (30, 20 + dy), (31, 16 - lift + dy)], 3.0))
-            c.paint(Canvas.ellipse(31, 15.5 - lift + dy, 1.7, 1.3), "W", only_on="OLSD")
-    head(c, 28, 10 + dy, **face)
-    collar(c, 27, 15 + dy)
+    if paw_up.startswith("scratch"):  # a hind leg swings up beside the head (behind it)
+        swing = 1 if paw_up.endswith("1") else 0
+        thigh = Canvas.stroke([(14, 29 + dy), (12 - swing, 21 + dy), (15 - swing, 14 + dy)], 3.2)
+        c.part(thigh)
+        c.paint(Canvas.ellipse(15 - swing, 13.5 + dy, 1.6, 1.2), "W", only_on="OLSD")
+    head(c, 28, 13 + dy, **face)
+    collar(c, 27, 19 + dy)
+    if paw_up.startswith("groom"):  # a front paw comes up in front of the face, over one cheek
+        raised = 1 if paw_up.endswith("1") else 0
+        c.part(Canvas.stroke([(29, 29 + dy), (31, 24 + dy), (32, 19 - raised + dy)], 3.0))
+        c.paint(Canvas.ellipse(32, 18.5 - raised + dy, 1.9, 1.5), "W", only_on="OLSD")
     if flick:  # the very tip of the tail lifts
         x, y = path[-1]
         c.paint(Canvas.ellipse(x, y - 1, 1.3, 1.3), "W")
@@ -367,8 +375,8 @@ def sleep(*, bob: int = 0, eyes: str = "closed", ears: str = "flat", **face: obj
     stripe_tail(c, tail[::-1])
     c.part(Canvas.ellipse(31, 33, 3.6, 1.7))  # a front paw tucked under the chin
     c.paint(Canvas.ellipse(31, 33, 2.8, 1.0), "W", only_on="OLSD")
-    head(c, 34, 26 + dy, eyes=eyes, ears=ears, **face)
-    collar(c, 33, 31 + dy)
+    head(c, 33, 26 + dy, eyes=eyes, ears=ears, **face)
+    collar(c, 32, 32 + dy)
     return c
 
 
@@ -392,6 +400,6 @@ def stretch(phase: int = 0) -> Canvas:
     near = Canvas.stroke([(27, 28 + deep), (36, 33)], 3.0)
     c.part(near)
     c.paint({(x, y) for x, y in near if x >= 34}, "W", only_on="OLSD")
-    head(c, 35, 27 + deep, eyes="squint", mouth="closed", ears="normal")
-    collar(c, 33, 32 + deep)
+    head(c, 33, 26 + deep, eyes="squint", mouth="closed", ears="normal")
+    collar(c, 32, 32 + deep)
     return c
