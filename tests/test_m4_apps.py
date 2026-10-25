@@ -75,7 +75,8 @@ async def run_tool(name: str):
 
 async def test_open_app_launches_the_resolved_app():
     out, catalog = await run_tool("steam")
-    assert out == "Opened Steam." and [a.name for a in catalog.launched] == ["Steam"]
+    assert out.text == "Opened Steam." and out.final
+    assert [a.name for a in catalog.launched] == ["Steam"]
 
 
 async def test_open_app_asks_when_ambiguous_and_reports_unknown():
@@ -117,6 +118,7 @@ async def test_agent_opens_the_app_through_the_permission_check_and_logs_it(tmp_
     agent.tools.update({t.name: t for t in app_tools(catalog)})
     result = await agent.turn(Session(), "open steam")
     assert [a.name for a in catalog.launched] == ["Steam"]
+    assert result.text == "Opened Steam."  # final tool result: no second model call
     assert result.trace[0].rule == "default:R1" and result.trace[0].allowed
     kinds = [r[0] for r in vault.query("SELECT kind FROM events ORDER BY id")]
     assert kinds == ["user_message", "memory_tool_call", "memory_tool_result", "assistant_message"]

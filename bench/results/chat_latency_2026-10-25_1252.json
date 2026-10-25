@@ -1,0 +1,122 @@
+{
+  "summary": {
+    "greeting": {
+      "total_ms": 570.1551000001928,
+      "first_token_ms": 327.9999999995198,
+      "model_calls": 1,
+      "tokens": 7
+    },
+    "remember a fact": {
+      "total_ms": 1643.6296000001676,
+      "first_token_ms": 0,
+      "model_calls": 1,
+      "tokens": 62
+    },
+    "open an app": {
+      "total_ms": 1126.6467999994347,
+      "first_token_ms": 0,
+      "model_calls": 1,
+      "tokens": 41
+    },
+    "answer from memory": {
+      "total_ms": 447.6028999997652,
+      "first_token_ms": 233.99999999946886,
+      "model_calls": 1,
+      "tokens": 7
+    }
+  },
+  "runs": {
+    "greeting": [
+      {
+        "total_ms": 711.9082999997772,
+        "first_token_ms": 483.99999999946886,
+        "steps": 1,
+        "tokens": 7,
+        "text": "Hey! What's up?"
+      },
+      {
+        "total_ms": 570.1551000001928,
+        "first_token_ms": 327.9999999995198,
+        "steps": 1,
+        "tokens": 7,
+        "text": "Yo! What's up?"
+      },
+      {
+        "total_ms": 469.22540000014124,
+        "first_token_ms": 186.99999999989814,
+        "steps": 1,
+        "tokens": 7,
+        "text": "Yo! What's up?"
+      }
+    ],
+    "remember a fact": [
+      {
+        "total_ms": 1609.0391000007003,
+        "first_token_ms": 0,
+        "steps": 1,
+        "tokens": 61,
+        "text": "Saved: User's favorite color is green [m:1]"
+      },
+      {
+        "total_ms": 1643.6296000001676,
+        "first_token_ms": 0,
+        "steps": 1,
+        "tokens": 62,
+        "text": "Already known: User's favorite color is green [m:1]"
+      },
+      {
+        "total_ms": 1680.800399999498,
+        "first_token_ms": 0,
+        "steps": 1,
+        "tokens": 63,
+        "text": "Already known: User's favorite color is green [m:1]"
+      }
+    ],
+    "open an app": [
+      {
+        "total_ms": 1311.0946000006152,
+        "first_token_ms": 0,
+        "steps": 1,
+        "tokens": 41,
+        "text": "Opened Steam."
+      },
+      {
+        "total_ms": 1126.6467999994347,
+        "first_token_ms": 0,
+        "steps": 1,
+        "tokens": 41,
+        "text": "Opened Steam."
+      },
+      {
+        "total_ms": 1114.0523000003668,
+        "first_token_ms": 0,
+        "steps": 1,
+        "tokens": 41,
+        "text": "Opened Steam."
+      }
+    ],
+    "answer from memory": [
+      {
+        "total_ms": 407.87860000000364,
+        "first_token_ms": 203.00000000042928,
+        "steps": 1,
+        "tokens": 7,
+        "text": "Your favorite color is green."
+      },
+      {
+        "total_ms": 498.47980000049574,
+        "first_token_ms": 250.0,
+        "steps": 1,
+        "tokens": 7,
+        "text": "Your favorite color is green."
+      },
+      {
+        "total_ms": 447.6028999997652,
+        "first_token_ms": 233.99999999946886,
+        "steps": 1,
+        "tokens": 7,
+        "text": "Your favorite color is green."
+      }
+    ]
+  }
+}

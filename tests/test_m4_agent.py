@@ -218,9 +218,10 @@ async def test_memory_save_flow_logs_before_acting(tmp_path, key):  # noqa: F811
     )
     assert logged["tool"] == "memory_save" and logged["reason"] == "user asked"
     assert logged["rule"] == "default:R1" and "reason" not in logged["args"]
-    tool_msg = chat.calls[1]["messages"][-1]
-    assert tool_msg["role"] == "tool" and tool_msg["content"].startswith("Saved [m:1]")
-    assert result.trace[0].allowed and result.text == "Noted."
+    # the tool's own sentence is the answer: one model call, not two
+    assert len(chat.calls) == 1 and result.steps == 1
+    assert result.text == "Saved: Prefers meetings after 14:00 [m:1]"
+    assert result.trace[0].allowed
     vault.close()
 
 
@@ -382,3 +383,90 @@ async def test_new_session_on_a_new_day_knows_the_user(tmp_path, key):  # noqa: 
     assert chat2.calls[1]["messages"][0] == before  # same prefix on the next turn
     assert agent2.profile.rebuilds == 1  # profile was not rebuilt
     vault2.close()
+
+
+# ---- fast finish: a tool whose text already answers the user ends the turn --------------------
+
+
+async def test_without_fast_finish_the_model_gets_the_tool_result_and_answers(tmp_path, key):  # noqa: F811
+    vault, store, svc, chat, agent = build(
+        tmp_path,
+        key,
+        [
+            call("memory_save", content="Prefers tea", memory_type="preference"),
+            say("Noted, tea it is."),
+        ],
+    )
+    agent.fast_finish = False
+    result = await agent.turn(Session(), "remember I prefer tea")
+    assert len(chat.calls) == 2 and result.text == "Noted, tea it is."
+    tool_msg = chat.calls[1]["messages"][-1]
+    assert tool_msg["role"] == "tool" and tool_msg["content"] == "Saved: Prefers tea [m:1]"
+    vault.close()
+
+
+async def test_fast_finish_streams_the_text_and_keeps_what_the_model_said_first(tmp_path, key):  # noqa: F811
+    first = ChatResult(
+        content="On it.",
+        tool_calls=[{"function": {"name": "memory_save", "arguments": {"content": "Prefers tea"}}}],
+    )
+    vault, store, svc, chat, agent = build(tmp_path, key, [first])
+    shown = []
+
+    async def on_delta(text):
+        shown.append(text)
+
+    result = await agent.turn(Session(), "remember I prefer tea", on_delta=on_delta)
+    assert result.text == "On it.\nSaved: Prefers tea [m:1]"
+    assert "".join(shown) == "On it." + result.text  # the model's words, then the tool's text
+    vault.close()
+
+
+async def test_data_returning_and_failing_tools_still_go_back_to_the_model(tmp_path, key):  # noqa: F811
+    vault, store, svc, chat, agent = build(
+        tmp_path,
+        key,
+        [
+            call("memory_search", query="tea"),  # returns data for the model to use
+            call("memory_save", content="x", memory_type="gossip"),  # invalid -> error text
+            say("Here is the answer."),
+        ],
+    )
+    result = await agent.turn(Session(), "what do you know about tea")
+    assert len(chat.calls) == 3 and result.text == "Here is the answer."
+    vault.close()
+
+
+async def test_a_denied_final_tool_does_not_end_the_turn_with_a_fake_success(tmp_path, key):  # noqa: F811
+    vault, store, svc, chat, agent = build(
+        tmp_path,
+        key,
+        [
+            call("memory_save", content="Prefers tea", memory_type="preference"),
+            say("I could not save that."),
+        ],
+        profile="background",
+    )
+    result = await agent.turn(Session(), "remember I prefer tea")
+    assert result.text == "I could not save that." and store.list_memories() == []
+    vault.close()
+
+
+async def test_one_failure_among_final_results_hands_control_back_to_the_model(tmp_path, key):  # noqa: F811
+    two = ChatResult(
+        tool_calls=[
+            {"function": {"name": "memory_save", "arguments": {"content": "Prefers tea"}}},
+            {
+                "function": {
+                    "name": "memory_save",
+                    "arguments": {"content": "x", "memory_type": "gossip"},
+                }
+            },
+        ]
+    )
+    vault, store, svc, chat, agent = build(
+        tmp_path, key, [two, say("Saved one, the other failed.")]
+    )
+    result = await agent.turn(Session(), "remember two things")
+    assert len(chat.calls) == 2 and result.text == "Saved one, the other failed."
+    vault.close()

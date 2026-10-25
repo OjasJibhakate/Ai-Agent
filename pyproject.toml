@@ -34,4 +34,6 @@ exclude = ["*.md"]
 
 [tool.ruff.lint.per-file-ignores]
 "bench/*" = ["E501"]  # data tables and report lines
+"ragnarok/ui.py" = ["RUF001"]  # the interface deliberately uses typographic glyphs
+"tests/test_m4_ui.py" = ["RUF001"]  # ...and so does its test
 "tests/*" = ["RUF059"]  # unused names from tuple-returning test setup helpers

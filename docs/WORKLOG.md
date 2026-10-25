@@ -364,3 +364,41 @@ Three sessions: day 1 tell it a preference and a manager; day 2 after a restart 
 
 ### Next
 README commands, then M5 (consolidation, forgetting, undo supersede, `memory pin`), a held-out eval set, and the first-run flow on the owner's laptop.
+
+## 2026-10-25 (evening) - first real run, the open_app skill, speed, and the terminal screen
+
+### What the owner saw
+First run on the real laptop: `init` worked, the first two passphrase attempts were typos and `chat` quit on the first one, then in `chat` "open steam" and
+"open microsoft edge" did nothing and the assistant made up reasons ("Edge isn't in your shortcuts yet"). Cause: the agent had no tool for it, and nothing told it to say so.
+
+### Fixed
+- `open_app` skill (D-030). Verified for real, not just with a fake: `Get-StartApps` lists 194 launchable apps here (Steam, Microsoft Edge, Chrome, Notepad, VS Code...),
+  names resolve to exactly one app, and a real launch of Notepad produced a new process within about 1 s (I closed it afterwards). The first app-list lookup takes 1.9 s,
+  so the chat loads it in the background.
+- Resolution bug found by a unit test: "visual studio" silently picked Visual Studio Code over Visual Studio Installer. The "shorter name wins" shortcut was removed; ambiguity now asks.
+- Honesty rule in the chat prompt; three passphrase tries before quitting.
+
+### Speed (`bench/chat_latency.py`, real models, median of 3 rounds, fake launcher)
+| Turn | Before | After |
+|---|---|---|
+| greeting | 919 ms | 570 ms |
+| remember a fact | 3,852 ms | 1,644 ms |
+| open an app | 2,177 ms | 1,127 ms |
+| answer from memory | 668 ms | 448 ms |
+
+What changed: tool turns no longer call the model a second time when the tool's own sentence is the answer; replies are shorter. What is left in a tool turn is writing the tool call itself
+(41-62 tokens at 49 tok/s); hiding the `reason` argument cuts that to about 34 tokens (measured on 8 prompts: median 53 -> 34), which the "after" column above does not yet include.
+Startup: models warm in the background, so the welcome screen was usable after 0.10 s in a full scripted session.
+
+### Terminal screen
+`ragnarok/ui.py` (colours, welcome box, spinner, footer) and `ragnarok/chat.py` (the chat session and the background learner). 12 distinct colours; every box edge lines up in both Unicode
+and ASCII modes (tested). `rag doctor`, `init` (recovery code in a box) and the memory commands use the same screen.
+Full scripted session on the real models: 6.3 s for 8 inputs, all turns 0.4-1.5 s, "open whatsapp" answered honestly that it is not installed.
+Tests: **193 pass**, `ruff` clean.
+
+### Not verified
+- How it looks and feels in the owner's own Windows Terminal (I can check the characters and codes, not the pixels). The spinner animation is tested for behaviour only.
+- Ctrl+C while a model is answering exits the program (it does not cancel just that answer).
+
+### Next
+M5: consolidation, forgetting, undo for a wrong supersede, pin/unpin and export from the CLI.

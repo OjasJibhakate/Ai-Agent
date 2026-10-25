@@ -283,3 +283,20 @@ Format: context → decision → alternatives → consequences → revisit if.
   - A NOOP/UPDATE whose target doesn't contain the new statement becomes SUPERSEDE if cosine >= 0.9 (a reword or change; the old version stays in history), otherwise ADD (keep both).
   - Rule of thumb: when unsure, keep more, never less. Duplicates and extra versions are cheap; a lost fact is not.
 - **Known risk:** the model's explicit SUPERSEDE is trusted. A wrong one hides a fact in the history (not deleted). There is no "undo supersede" command yet.
+
+### D-030 — Actions end their own turn; the terminal screen; the app-opening skill
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Context:** The owner tried "open steam" and "open microsoft edge" and the agent did nothing and invented answers: it only had memory tools. Chat also felt slow:
+  tool turns took 2.2-3.9 s because the model was called a second time just to say "Saved" or "Opened".
+- **Decision:**
+  - New skill `open_app` (`ragnarok/skills/apps.py`): the model supplies a name; the program comes from Windows' own Start menu list (`Get-StartApps`), is chosen by code,
+    and is started with `explorer.exe shell:AppsFolder\<id>`, so no model text ever reaches a command line. Ambiguous names ask instead of guessing, web-link entries and uninstallers
+    are skipped, command shells and admin tools are refused. Risk R1, sandbox declared `full-access` (a launched app runs as the user); the interactive profile allows R1, the background profile asks.
+  - `ToolResult(text, final=True)`: a tool whose text already answers the user ends the turn with no second model call (`Agent.fast_finish`). Data-returning tools (`memory_search`),
+    errors, denials and mixed batches still go back to the model. `memory_save` now answers `Saved: <what was stored> [m:N]`, which is also more faithful than the model's paraphrase.
+  - The optional `reason` argument is hidden from the model (it cost about 19 generated tokens per call, 0.4 s, and only restated the request); it is still accepted and logged if given.
+  - The chat prompt says the assistant can do only what its tools allow and must not invent details; replies are one or two short sentences.
+  - Terminal screen (`ragnarok/ui.py`, `ragnarok/chat.py`): plain ANSI, no new dependency. One hue per kind of thing, off for pipes and `NO_COLOR`, ASCII fallback if the console cannot print
+    box characters. Models, the Start-menu app list, and learning all happen in the background; learning is cancelled the moment the user types, so quitting is instant.
+    Unlearned events stay pending and are read at the next session (the screen says so).
+- **Consequences:** Learning from a conversation now happens during idle time (15 s) or at the next start, not at exit. `rag ingest` and the next `chat` catch up.

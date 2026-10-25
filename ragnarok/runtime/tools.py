@@ -44,6 +44,18 @@ class MemorySaveArgs(ToolArgs):
     memory_type: Literal["episodic", "semantic", "preference", "procedural", "project"] = "semantic"
 
 
+@dataclass(frozen=True)
+class ToolResult:
+    """What a handler returns when its text already answers the user.
+
+    `final=True` ends the turn without another model call (a second call just to say
+    "Opened Steam" costs one to three seconds). Plain strings go back to the model as before.
+    """
+
+    text: str
+    final: bool = False
+
+
 @dataclass
 class Tool:
     name: str
@@ -53,7 +65,7 @@ class Tool:
     idempotent: bool
     timeout_s: float
     sandbox: str  # read-only | workspace-write | full-access
-    handler: Callable[[Any], Awaitable[str]]
+    handler: Callable[[Any], Awaitable[str | ToolResult]]
     fs: dict[str, list[str]] = field(default_factory=dict)
     network: list[str] = field(default_factory=list)
 
@@ -61,6 +73,9 @@ class Tool:
         """The tool in Ollama's function-calling format."""
         schema = self.args_model.model_json_schema()
         schema.pop("title", None)
+        # Hidden from the model: asking it to explain each call cost about 19 generated tokens
+        # (0.4 s) and it only restated the request. The trace still records tool, args and rule.
+        schema["properties"].pop("reason", None)
         return {
             "type": "function",
             "function": {
@@ -84,18 +99,19 @@ def memory_tools(svc: MemoryService, ingestor: Ingestor) -> list[Tool]:
             return "No matching memories."
         return "\n".join(format_memory(h.memory) for h in hits)
 
-    async def memory_save(args: MemorySaveArgs) -> str:
+    async def memory_save(args: MemorySaveArgs) -> ToolResult:
         event = CURRENT_EVENT.get()
         action, memory_id = await ingestor.remember_explicit(
             args.content, args.memory_type, event_ids=[event] if event else []
         )
         said = {
             "ADD": "Saved",
-            "UPDATE": "Already known, reinforced",
+            "UPDATE": "Already known",
             "NOOP": "Already known",
-            "SUPERSEDE": "Saved, replacing the older version",
+            "SUPERSEDE": "Updated",
         }[action]
-        return f"{said} [m:{memory_id}]"
+        note = " (replaces the older version)" if action == "SUPERSEDE" else ""
+        return ToolResult(f"{said}: {args.content} [m:{memory_id}]{note}", final=True)
 
     return [
         Tool(

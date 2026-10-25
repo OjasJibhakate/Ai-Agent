@@ -11,7 +11,7 @@ Project rules for contributors and coding agents: [`AGENTS.md`](AGENTS.md).
 
 Target machine: HP OMEN 16, i5-13420H, 16 GB RAM, RTX 4050 6 GB, Windows 11, no WSL or Docker.
 
-*Last updated: 2026-10-25 18:10 IST (UTC+05:30).*
+*Last updated: 2026-10-25 19:00 IST (UTC+05:30).*
 
 ---
 
@@ -21,13 +21,14 @@ You need Ollama running with the project's settings, then three commands. Run th
 (`C:\Users\parth\dev\Ai-Agent`), not from a OneDrive folder.
 
 ```powershell
+cd C:\Users\parth\dev\Ai-Agent
 powershell -ExecutionPolicy Bypass -File scripts\start_ollama.ps1   # start Ollama (local-only, models pinned)
 uv run python -m ragnarok init     # once: choose a passphrase, save the recovery code it shows you
-uv run python -m ragnarok chat     # talk to it; say "remember that ...", quit, come back later
+uv run python -m ragnarok chat     # talk to it: "remember that ...", "open steam"; quit, come back later
 ```
 
 Inside `chat`: `/memories` lists what it remembers, `/profile` shows what is always in its prompt, `/forget N` deletes a memory,
-`/ingest` learns from the session now, `/quit` saves and exits. Other commands: `memory list|search|show|history|forget|archive|restore`,
+`/clear` clears the screen, `/quit` leaves. It learns from the chat while you are idle and finishes next time, so leaving is instant. Other commands: `memory list|search|show|history|forget|archive|restore`,
 `ingest`, and `doctor` (checks local-only mode, models, GPU and encryption).
 
 The models do not run "in" the terminal: they run in the Ollama background process on your GPU, and the terminal is the chat window.

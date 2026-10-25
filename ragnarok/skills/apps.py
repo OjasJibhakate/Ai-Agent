@@ -20,7 +20,7 @@ from typing import Protocol
 from pydantic import Field
 
 from ragnarok.policy.permissions import Risk
-from ragnarok.runtime.tools import Tool, ToolArgs
+from ragnarok.runtime.tools import Tool, ToolArgs, ToolResult
 
 CACHE_SECONDS = 300
 # Never opened on the model's say-so: a shell or admin tool lets typed text become commands.
@@ -116,7 +116,7 @@ class OpenAppArgs(ToolArgs):
 def app_tools(catalog: AppCatalog | None = None) -> list[Tool]:
     catalog = catalog or WindowsApps()
 
-    async def open_app(args: OpenAppArgs) -> str:
+    async def open_app(args: OpenAppArgs) -> str | ToolResult:
         if REFUSED.search(args.name):
             return "I don't open command shells or admin tools. Please open that one yourself."
         apps = await asyncio.to_thread(catalog.list_apps)
@@ -130,7 +130,7 @@ def app_tools(catalog: AppCatalog | None = None) -> list[Tool]:
         if REFUSED.search(app.name):
             return "I don't open command shells or admin tools. Please open that one yourself."
         await asyncio.to_thread(catalog.launch, app)
-        return f"Opened {app.name}."
+        return ToolResult(f"Opened {app.name}.", final=True)
 
     return [
         Tool(

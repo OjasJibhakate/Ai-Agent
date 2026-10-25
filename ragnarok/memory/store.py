@@ -466,6 +466,9 @@ class MemoryStore:
         )
         return _row_to_memory(rows[0]) if rows else None
 
+    def count(self, status: str = "active") -> int:
+        return self.vault.query("SELECT count(*) FROM memories WHERE status = ?", (status,))[0][0]
+
     def version(self) -> tuple:
         """Changes whenever memories are added, removed, re-pinned, or change status."""
         return self.vault.query(

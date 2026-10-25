@@ -24,15 +24,13 @@ from pathlib import Path
 
 import httpx
 
+from ragnarok.chat import ChatApp
 from ragnarok.memory.ingest import GatewayLlm, Ingestor
 from ragnarok.memory.service import MemoryService
 from ragnarok.memory.store import MemoryStore
 from ragnarok.memory.vault import Vault, VaultKeyError
-from ragnarok.policy.permissions import Decision
 from ragnarok.runtime.gateway import CHAT_MODEL, EMBED_MODEL, OLLAMA_URL, Gateway
-from ragnarok.runtime.loop import Agent, Session
-from ragnarok.runtime.tools import memory_tools
-from ragnarok.skills.apps import app_tools
+from ragnarok.ui import Console
 from ragnarok.vault import keys
 
 KEY_FILE, DPAPI_FILE, VAULT_FILE = "key.json", "key.dpapi", "vault.db"
@@ -70,6 +68,7 @@ class Runtime:
 
 def unlock(home: Path, *, use_recovery: bool = False) -> bytes:
     """DPAPI copy if enabled, otherwise the passphrase (or recovery code)."""
+    ui = Console()
     keystore = home / KEY_FILE
     if not keystore.exists():
         raise CliError("no keystore found. Run `init` first.")
@@ -77,17 +76,18 @@ def unlock(home: Path, *, use_recovery: bool = False) -> bytes:
         try:
             return keys.unlock_with_dpapi(home / DPAPI_FILE)
         except keys.KeystoreError:
-            print("DPAPI unlock failed; asking for the passphrase.", file=sys.stderr)
+            ui.notice("Automatic unlock failed; asking for the passphrase.")
+    what = "Recovery code" if use_recovery else "Passphrase"
     for attempt in range(MAX_UNLOCK_TRIES):
         try:
+            secret = getpass.getpass(f" {what}: ")
             if use_recovery:
-                return keys.unlock_with_recovery(keystore, getpass.getpass("Recovery code: "))
-            return keys.unlock_with_passphrase(keystore, getpass.getpass("Passphrase: "))
+                return keys.unlock_with_recovery(keystore, secret)
+            return keys.unlock_with_passphrase(keystore, secret)
         except keys.WrongSecret:
             left = MAX_UNLOCK_TRIES - attempt - 1
             if left:
-                what = "recovery code" if use_recovery else "passphrase"
-                print(f"Wrong {what}. {left} tries left.")
+                ui.error(f"Wrong {what.lower()}. {left} {'try' if left == 1 else 'tries'} left.")
     raise CliError("wrong passphrase or recovery code.")
 
 
@@ -110,11 +110,16 @@ def open_runtime(
 
 
 def cmd_init(args: argparse.Namespace) -> int:
+    ui = Console()
     home = home_dir()
     if (home / KEY_FILE).exists():
         raise CliError(f"already initialised at {home}.")
-    first = getpass.getpass("Choose a passphrase (8+ characters): ")
-    if first != getpass.getpass("Repeat it: "):
+    ui.write()
+    ui.section("Set up Ragnarok")
+    ui.notice("Your memories are encrypted with a key that only your passphrase can open.")
+    ui.write()
+    first = getpass.getpass(" Choose a passphrase (8+ characters): ")
+    if first != getpass.getpass(" Repeat it: "):
         raise CliError("the passphrases do not match.")
     try:
         created = keys.create_keystore(home / KEY_FILE, first)
@@ -123,84 +128,31 @@ def cmd_init(args: argparse.Namespace) -> int:
     Vault.open(home / VAULT_FILE, created.vault_key).close()
     if args.dpapi:
         keys.enable_dpapi(home / DPAPI_FILE, created.vault_key)
-    print(f"Created an encrypted vault in {home}")
-    print("\nRECOVERY CODE (shown once; store it somewhere safe, it is the only way back if you")
-    print(f"forget the passphrase):\n\n    {created.recovery_code}\n")
+    ui.write()
+    ui.success(f"Created an encrypted vault in {home}")
+    ui.write()
+    ui.box("Recovery code", ["", ui.amber(created.recovery_code), ""], tint=179)
+    ui.write()
+    ui.write(" " + ui.bold("Save this code somewhere safe."))
+    ui.notice("It is shown once, and it is the only way back in if you forget the passphrase.")
     if args.dpapi:
-        print("Auto-unlock is ON: anyone logged in to this Windows account can open the vault.")
+        ui.write()
+        ui.notice("Auto-unlock is on: anyone signed in to this Windows account can open the vault.")
+    ui.write()
+    ui.write(f" Next: {ui.sky('uv run python -m ragnarok chat')}")
+    ui.write()
     return 0
-
-
-async def _approve(name: str, args: dict, decision: Decision) -> bool:
-    answer = await asyncio.to_thread(input, f"  allow {name}({args}) [{decision.rule}]? [y/N] ")
-    return answer.strip().lower() in ("y", "yes")
-
-
-async def _chat(rt: Runtime) -> None:
-    tools = memory_tools(rt.svc, rt.ingestor) + app_tools()
-    agent = Agent(rt.store, rt.svc, rt.ingestor, rt.gateway, approve=_approve, tools=tools)
-    session = Session()
-    print("Loading models...", end=" ", flush=True)
-    print(f"ready in {await rt.gateway.warm_up():.1f}s. Type /help for commands.\n")
-    while True:
-        try:
-            line = (await asyncio.to_thread(input, "you> ")).strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-        if not line:
-            continue
-        if line.startswith("/"):
-            if await _slash(line, rt, agent):
-                break
-            continue
-
-        async def show(text: str) -> None:
-            print(text, end="", flush=True)
-
-        print("rag> ", end="", flush=True)
-        result = await agent.turn(session, line, on_delta=show)
-        if result.stopped == "model-error":
-            print(result.text, end="")
-        print()
-        for t in result.trace:
-            mark = "ok" if t.allowed else "blocked"
-            print(f"     [{t.tool} {mark}] {t.result.splitlines()[0] if t.result else ''}")
-    print("Saving what I learned...", end=" ", flush=True)
-    report = await rt.ingestor.ingest_pending()
-    print(
-        f"{report.added} new, {report.superseded} changed, "
-        f"{report.noop + report.updated} confirmed."
-    )
-
-
-async def _slash(line: str, rt: Runtime, agent: Agent) -> bool:
-    cmd, _, arg = line.partition(" ")
-    if cmd in ("/quit", "/exit"):
-        return True
-    if cmd == "/help":
-        print("/memories  list what I remember   /profile  what is always in my prompt")
-        print("/forget N  delete memory N         /ingest   learn from this session now")
-        print("/quit      save and exit")
-    elif cmd == "/memories":
-        for m in rt.store.list_memories(limit=30):
-            print(f"  [m:{m.id}] {m.content}")
-    elif cmd == "/profile":
-        print(agent.profile.get()[0])
-    elif cmd == "/forget" and arg.strip().isdigit():
-        print("deleted." if rt.store.delete(int(arg)) else "no such memory.")
-    elif cmd == "/ingest":
-        print(await rt.ingestor.ingest_pending())
-    else:
-        print("unknown command; try /help")
-    return False
 
 
 def cmd_chat(args: argparse.Namespace) -> int:
     home = home_dir()
     rt = open_runtime(home, unlock(home, use_recovery=args.recovery))
+    ui = Console()
     try:
-        asyncio.run(_chat(rt))
+        asyncio.run(ChatApp(rt, ui, folder=str(home)).run())
+    except KeyboardInterrupt:
+        ui.write()
+        ui.notice("Interrupted.")
     finally:
         rt.close()
     return 0
@@ -209,30 +161,39 @@ def cmd_chat(args: argparse.Namespace) -> int:
 def cmd_ingest(args: argparse.Namespace) -> int:
     home = home_dir()
     rt = open_runtime(home, unlock(home))
+    ui = Console()
     try:
-        print(asyncio.run(rt.ingestor.ingest_pending(limit=args.limit)))
+        report = asyncio.run(rt.ingestor.ingest_pending(limit=args.limit))
     finally:
         rt.close()
+    ui.success(
+        f"{report.events} events read: {report.added} new, {report.superseded} changed, "
+        f"{report.noop + report.updated} confirmed."
+    )
+    if report.deferred:
+        ui.error(f"{report.deferred} events could not be read (is the model running?).")
     return 0
 
 
-def _print_memory(m) -> None:
-    flags = ("pinned " if m.pinned else "") + m.status
-    print(f"[m:{m.id}] {m.content}")
-    print(f"        {m.memory_type}, {m.origin} {m.confidence:.2f}, {m.created_at[:10]}, {flags}")
+def _show_memory(ui: Console, m) -> None:
+    flags = ("pinned, " if m.pinned else "") + m.status
+    ui.write(f"   {ui.amber(f'm{m.id}')}  {m.content}")
+    ui.write(
+        "      "
+        + ui.faint(f"{m.memory_type}, {m.origin} {m.confidence:.2f}, {m.created_at[:10]}, {flags}")
+    )
 
 
 def cmd_memory(args: argparse.Namespace) -> int:
     home = home_dir()
     rt = open_runtime(home, unlock(home))
+    ui = Console()
     try:
         store, act = rt.store, args.action
         if act == "list":
-            for m in store.list_memories(status=args.status, limit=args.limit):
-                _print_memory(m)
+            ui.memories(store.list_memories(status=args.status, limit=args.limit))
         elif act == "search":
-            for h in asyncio.run(rt.svc.recall(args.arg, k=8)):
-                _print_memory(h.memory)
+            ui.memories([h.memory for h in asyncio.run(rt.svc.recall(args.arg, k=8))])
         elif act in ("show", "history", "forget", "archive", "restore"):
             if not args.arg.isdigit():
                 raise CliError(f"`memory {act}` needs a memory number.")
@@ -241,25 +202,32 @@ def cmd_memory(args: argparse.Namespace) -> int:
                 m = store.get(mid)
                 if m is None:
                     raise CliError("no such memory.")
-                _print_memory(m)
+                ui.write()
+                _show_memory(ui, m)
                 sources = rt.vault.query(
                     "SELECT e.ts, e.kind FROM memory_sources s JOIN events e ON e.id = s.event_id"
                     " WHERE s.memory_id = ?",
                     (mid,),
                 )
                 for ts, kind in sources:
-                    print(f"        from {kind} at {ts}")
+                    ui.write("      " + ui.faint(f"from {kind} at {ts}"))
+                ui.write()
             elif act == "history":
+                ui.write()
                 for m in store.history(mid):
-                    _print_memory(m)
+                    _show_memory(ui, m)
+                ui.write()
             elif act == "forget":
-                print("deleted." if store.delete(mid) else "no such memory.")
+                if store.delete(mid):
+                    ui.success(f"Deleted m{mid}.")
+                else:
+                    ui.error("No such memory.")
             else:
                 try:
                     getattr(store, act)(mid)
                 except ValueError as exc:
                     raise CliError(str(exc)) from exc
-                print(f"{act}d.".replace("ee", "e"))
+                ui.success(f"{'Archived' if act == 'archive' else 'Restored'} m{mid}.")
         else:
             raise CliError(f"unknown memory action {act!r}.")
     finally:
@@ -268,39 +236,48 @@ def cmd_memory(args: argparse.Namespace) -> int:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
+    ui = Console()
     failures = 0
 
     def line(ok: bool | None, what: str, detail: str = "") -> None:
         nonlocal failures
-        tag = "ok  " if ok else ("warn" if ok is None else "FAIL")
-        failures += ok is False
-        print(f"[{tag}] {what}" + (f": {detail}" if detail else ""))
+        if ok:
+            mark = ui.good(ui.g["ok"])
+        elif ok is None:
+            mark = ui.amber("!")
+        else:
+            mark = ui.bad(ui.g["no"])
+            failures += 1
+        ui.write(f"   {mark} {what}" + (f"  {ui.faint(detail)}" if detail else ""))
 
+    ui.write()
+    ui.section("Checking your setup")
+    ui.write()
     base = os.environ.get("RAGNAROK_OLLAMA_URL", OLLAMA_URL)
     try:
         version = httpx.get(f"{base}/api/version", timeout=3).json()["version"]
-        line(True, "Ollama reachable on loopback", f"version {version}")
+        line(True, "Ollama is running on this machine only", f"version {version}")
     except Exception:
-        line(
-            False,
-            "Ollama reachable on loopback",
-            f"nothing at {base}; run scripts/start_ollama.ps1",
-        )
+        line(False, "Ollama is not reachable", f"nothing at {base}; run scripts/start_ollama.ps1")
+        ui.write()
         return 1
-    line(os.environ.get("OLLAMA_NO_CLOUD") == "1" or None, "OLLAMA_NO_CLOUD=1 in this environment")
+    line(
+        os.environ.get("OLLAMA_NO_CLOUD") == "1" or None,
+        "Cloud features are switched off (OLLAMA_NO_CLOUD=1)",
+    )
     log = Path(os.environ.get("LOCALAPPDATA", ".")) / "Ragnarok" / "logs" / "ollama-serve.err.log"
     try:
         text = log.read_text(encoding="utf-8", errors="ignore")
-        line("cloud disabled: true" in text or None, "server log says cloud is disabled", str(log))
+        line("cloud disabled: true" in text or None, "The server log confirms cloud is disabled")
     except OSError:
-        line(None, "server log not found", "start Ollama with scripts/start_ollama.ps1")
+        line(None, "No server log found", "start Ollama with scripts/start_ollama.ps1")
 
     have = {m["name"] for m in httpx.get(f"{base}/api/tags", timeout=5).json()["models"]}
     for model in (CHAT_MODEL, f"{EMBED_MODEL}:latest"):
-        line(model in have, f"model {model} installed")
+        line(model in have, f"Model {model} is installed")
     loaded = httpx.get(f"{base}/api/ps", timeout=5).json()["models"]
     if not loaded:
-        line(None, "no model loaded yet", "the first chat loads them")
+        line(None, "No model loaded yet", "the first chat loads them")
     for m in loaded:
         gpu = 100 * m["size_vram"] / m["size"] if m["size"] else 0
         line(
@@ -312,20 +289,20 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     try:
         home = home_dir()
     except CliError as exc:
-        line(False, "data folder", str(exc))
+        line(False, "Data folder", str(exc))
+        ui.write()
         return 1
     if (home / KEY_FILE).exists():
-        line(True, "keystore present", str(home / KEY_FILE))
+        line(True, "Keystore found", str(home / KEY_FILE))
     else:
-        line(None, "no keystore yet", "run `init` to create your vault")
+        line(None, "No keystore yet", "run `init` to create your vault")
     vault_path = home / VAULT_FILE
     if vault_path.exists():
         header = vault_path.read_bytes()[:16]
-        line(
-            not header.startswith(b"SQLite format 3"), "vault file is encrypted (not plain SQLite)"
-        )
+        line(not header.startswith(b"SQLite format 3"), "The vault file is encrypted")
     else:
-        line(None, "no vault yet", "run `init`")
+        line(None, "No vault yet", "run `init`")
+    ui.write()
     return 1 if failures else 0
 
 
@@ -372,7 +349,7 @@ def main(argv: list[str] | None = None, *, _run: Callable | None = None) -> int:
     try:
         return (_run or args.run)(args)
     except CliError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        Console(sys.stderr).error(str(exc))
         return 2
     except KeyboardInterrupt:
         return 130
