@@ -70,7 +70,7 @@ Times are commit times (IST). Details and numbers for each line are in the work 
 | 2026-10-25 19:39 | **M5** Weekly summaries (validated model output), forgetting by usefulness, delete cascade, undo, daily maintenance | `1eda367` |
 | 2026-10-25 19:45 | CLI controls for all of it (`memory pin\|correct\|revert\|export\|stats\|consolidate\|prune\|maintain\|undo-summary`) and idle-time maintenance in the chat | `27fedd9` |
 | 2026-10-25 20:10 | `open_website`: "open chrome and go to yt and search ..." now works (sites and searches in the browser you name; hostile addresses refused; multi-step requests no longer cut short) | `8412f03` |
-| 2026-10-25 21:40 | **Screen skill (experimental):** `read_screen` (answers questions about what is on the screen) and `use_computer` (mouse and keyboard, asks first, Esc or mouse move stops it, never types into a terminal). Live test on a small test window: **5 of 15 tasks succeeded**; reading is solid, acting is not yet (D-035) | next commit |
+| 2026-10-25 21:40 | **Screen skill (experimental):** `read_screen` (answers questions about what is on the screen) and `use_computer` (mouse and keyboard, asks first, Esc or mouse move stops it, never types into a terminal). Live test on a small test window: **5 of 15 tasks succeeded**; reading is solid, acting is not yet (D-035) | `048167a` |
 
 550 tests pass and `ruff` is clean as of the last commit.
 
