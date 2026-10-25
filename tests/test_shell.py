@@ -83,6 +83,11 @@ async def run(guard, command, **kw):
         "copy $env:USERPROFILE\\.claude\\history.jsonl x",
         "gc 'C:\\Users\\me\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Login Data'",
         "cmdkey /list",
+        'start chrome "https://lms.example.edu"',
+        "Start-Process https://example.com",
+        "chrome.exe https://example.com/login",
+        "explorer https://example.com",
+        "start www.example.com",
         "vaultcmd /list",
     ],
 )
@@ -109,6 +114,8 @@ def test_dangerous_commands_are_refused(guard, command):
         "Get-Content C:\\Users\\me\\Downloads\\Ragnarok\\notes.txt",  # our own output folder
         "node -e \"console.log('format: C')\"",
         "echo done",
+        "Invoke-WebRequest https://example.com/a.zip -OutFile a.zip",
+        "git clone https://github.com/x/y",
     ],
 )
 def test_ordinary_commands_are_not_refused(guard, command):

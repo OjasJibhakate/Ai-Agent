@@ -84,6 +84,14 @@ REFUSED: list[tuple[re.Pattern[str], str]] = [
         "that changes startup entries, services, the registry or security settings",
     ),
     (
+        re.compile(
+            r"\b(?:start|start-process|invoke-item|ii|explorer|cmd\s*/c\s*start|chrome|msedge|firefox"
+            r"|iexplore)(?:\.exe)?\b[^|;&\n]*\bhttps?://|\b(?:start|start-process)\b[^|;&\n]*\b(?:www\.)",
+            re.IGNORECASE,
+        ),
+        "use the website tool to open web pages (only addresses you typed or sites I know)",
+    ),
+    (
         re.compile(r"\b(?:shutdown|restart-computer|stop-computer)\b", re.IGNORECASE),
         "shutting the computer down could lose your unsaved work",
     ),
