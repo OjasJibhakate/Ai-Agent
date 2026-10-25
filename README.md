@@ -130,6 +130,7 @@ ragnarok/
   cli.py         terminal front end (init, chat, memory, ingest, doctor)
   memory/        vault.py (SQLCipher, migrations)  store.py (write, search)  ingest.py (events -> memories)
                  profile.py (always-on block)  service.py (async)  index.py (exact, Turbovec)
+  persistent_memory.py   the whole memory lifecycle in one readable file (start here)
   vault/         keys.py (passphrase, recovery code, DPAPI)
   runtime/       gateway.py (the only path to a model)  loop.py (agent loop)  context.py  tools.py  prompts/
   policy/        permissions.py (every tool call is checked here)

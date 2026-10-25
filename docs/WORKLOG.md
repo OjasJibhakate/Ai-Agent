@@ -412,3 +412,12 @@ M5: consolidation, forgetting, undo for a wrong supersede, pin/unpin and export 
 - A noisy "weaker matches" fallback made a search for a (correctly hidden) `id_rsa` return 213 irrelevant folders; removed. Ranking put deep folders ahead of `Desktop\Data_structure_certificate.pdf`; now shallow and files first.
 - Tests: **241 pass**, 1 skipped (symlink needs admin; a directory junction test covers the same escape on Windows). Safety cases covered: traversal, outside roots, symlink/junction, secrets by name and by exact path, binary and oversized files, time budget, result caps.
 - Not verified: reading PDFs (unsupported), and how the final screen looks in the owner's terminal.
+
+## 2026-10-25 (night) - `persistent_memory.py`
+
+- Added `ragnarok/persistent_memory.py` (D-032): the whole memory lifecycle in one file with a plain-language explanation at the top, plus `correct`, `revert`, `pin`, `export` and `stats`.
+- 12 new tests (`tests/test_persistent_memory.py`): tell it things, close everything, reopen, and it still knows them; the vault needs the right key and shows no readable text on disk; explicit saves report ADD/NOOP/SUPERSEDE;
+  correct keeps history and carries over pin and importance; revert works one step at a time; pinned memories lead the profile and cannot be archived; forget removes everything and leaves only a tombstone;
+  export refuses without consent and writes every version; secrets are scrubbed before storage.
+- Two test mistakes of mine fixed on the way (the fake embedder cannot match "live" to "lives"; "Likes tea" is itself a preference). No code bugs found.
+- Not done: CLI commands for correct/revert/pin/export, forgetting by usefulness, summaries.

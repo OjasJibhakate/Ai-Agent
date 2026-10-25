@@ -318,3 +318,13 @@ Format: context → decision → alternatives → consequences → revisit if.
   - The event log keeps only the first 300 characters of any tool result.
 - **Consequences:** The agent still cannot open, change, move or delete files, and cannot read PDFs. "Open that file" is the natural next skill (it needs an approval rule, since it starts a program).
 - **Test hygiene found on the way:** `default_roots` read the real `OneDrive` environment variable, so tests with a pretend home searched the owner's real folders. Environment-based roots now apply only to the real profile.
+
+### D-032 — One file for the persistent-memory lifecycle: `ragnarok/persistent_memory.py`
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Context:** The memory logic was correct but spread over the vault, store, ingest, profile and service modules, so there was no single place to read, demo or explain it.
+  `docs/MEMORY.md` section 9 had described a "module API" that did not exist as one thing.
+- **Decision:** `PersistentMemory` wraps the existing pieces (no logic is duplicated) behind one async object: `observe`, `learn`, `remember`, `recall`, `profile`, `get/list/history/stats`,
+  `correct`, `revert`, `pin/unpin`, `archive/restore`, `forget`, `export`, `checkpoint`, `close`. The module docstring explains the whole design in plain language (two tiers, writing, reading, changing your mind, durability, what is not built).
+  New store primitives behind it: `set_pinned`, `revert` (only the fact directly before the current one can come back, so there is never more than one active version; the newer one is archived, not deleted) and `stats`.
+  `export` writes unencrypted JSON lines and refuses unless the caller passes `allow_plaintext=True`.
+- **Consequences:** Delivers the user-control part of M5 at the API level (correct, revert, pin, export). Not yet wired into the CLI commands. Automatic forgetting and summaries are still open.

@@ -341,6 +341,78 @@ class MemoryStore:
                 "INSERT OR IGNORE INTO memory_links VALUES (?, ?, ?)", (from_id, to_id, relation)
             )
 
+    def set_pinned(self, memory_id: int, pinned: bool) -> None:
+        """Pinned memories are always in the profile and are never archived."""
+        with self.vault.transaction() as con:
+            changed = con.execute(
+                "UPDATE memories SET pinned = ? WHERE id = ? AND status = 'active'",
+                (int(pinned), memory_id),
+            ).rowcount
+        if not changed:
+            raise ValueError(f"memory {memory_id} is not active")
+
+    def revert(self, memory_id: int) -> int | None:
+        """Undo a supersede: bring the older fact back and archive the one that replaced it.
+
+        Only the fact directly before the current one can come back, so there is never more than
+        one active version of a fact. Returns the id of the archived newer memory, if any.
+        """
+        old = self.get(memory_id)
+        if old is None or old.status != "superseded":
+            raise ValueError("only a replaced (superseded) memory can be brought back")
+        row = self.vault.query(
+            "SELECT id, status FROM memories WHERE supersedes_id = ?", (memory_id,)
+        )
+        newer_id = None
+        if row:
+            newer_id, newer_status = row[0]
+            if newer_status != "active":
+                raise ValueError(
+                    "a newer version replaced it later; bring back the newest one first"
+                )
+        now = self._now()
+        with self.vault.transaction() as con:
+            con.execute(
+                "UPDATE memories SET status = 'active', valid_to = NULL WHERE id = ?", (memory_id,)
+            )
+            con.execute(
+                "INSERT INTO index_outbox(op, memory_id, created_at) VALUES ('add', ?, ?)",
+                (memory_id, now),
+            )
+            if newer_id is not None:
+                con.execute("UPDATE memories SET status = 'archived' WHERE id = ?", (newer_id,))
+                con.execute(
+                    "INSERT INTO index_outbox(op, memory_id, created_at) VALUES ('remove', ?, ?)",
+                    (newer_id, now),
+                )
+        self._apply_pending()
+        return newer_id
+
+    def stats(self) -> dict:
+        """Counts for a quick health view: memories by status and type, events, index size."""
+        by_status = dict(self.vault.query("SELECT status, count(*) FROM memories GROUP BY status"))
+        by_type = dict(
+            self.vault.query(
+                "SELECT memory_type, count(*) FROM memories WHERE status = 'active' GROUP BY 1"
+            )
+        )
+        events, pending = self.vault.query(
+            "SELECT count(*), coalesce(sum(ingested_at IS NULL), 0) FROM events"
+        )[0]
+        pinned = self.vault.query(
+            "SELECT count(*) FROM memories WHERE pinned = 1 AND status = 'active'"
+        )[0][0]
+        return {
+            "active": by_status.get("active", 0),
+            "superseded": by_status.get("superseded", 0),
+            "archived": by_status.get("archived", 0),
+            "pinned": pinned,
+            "by_type": by_type,
+            "events": events,
+            "events_not_yet_learned": pending,
+            "indexed_vectors": len(self.index),
+        }
+
     def archive(self, memory_id: int) -> None:
         mem = self.get(memory_id)
         if mem is None or mem.status != "active":
