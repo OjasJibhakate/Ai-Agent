@@ -65,7 +65,7 @@ def cand(content, mtype="preference", origin="user_stated", **kw):
 def setup(tmp_path, key, table, clock=None):  # noqa: F811
     vault, store, _, emb = make(tmp_path, key, "exact", clock)
     llm = ScriptedLlm(table)
-    ing = Ingestor(store, emb, llm, sim_floor=0.4)
+    ing = Ingestor(store, emb, llm, sim_floor=0.4, same_slot=0.7)  # fake cosines are lower
     return vault, store, llm, ing
 
 
@@ -374,4 +374,64 @@ async def test_plans_roll_forward_but_past_events_keep_their_date(tmp_path, key)
     await ing.ingest_pending()
     got = sorted(m.content for m in store.list_memories())
     assert got == ["Anniversary is on 2027-02-14", "Went to Goa on 2026-03-05"]
+    vault.close()
+
+
+@pytest.mark.parametrize(
+    "forced",
+    [
+        {"action": "NOOP", "target_id": None},
+        {"action": "NOOP", "target_id": 1},
+        {"action": "UPDATE", "target_id": 1},
+    ],
+)
+async def test_noop_on_an_unrelated_memory_never_loses_the_new_fact(tmp_path, key, forced):  # noqa: F811
+    """Regression from the real-model demo: 'manager is Ravi' was dropped as a NOOP."""
+    t1, t2 = "I prefer meetings after 2pm", "Ravi is my manager, we have a one to one on Mondays"
+    table = {
+        t1: [cand("Prefers meetings after 14:00")],
+        t2: [cand("Manager is Ravi with one to one meetings on Mondays", "semantic")],
+    }
+    vault, store, llm, ing = setup(tmp_path, key, table)
+    ing.sim_floor = 0.1  # make the unrelated memory a neighbour so the model is asked
+    store.record_event("chat", "user_message", t1)
+    await ing.ingest_pending()
+    llm.force_decision = forced
+    store.record_event("chat", "user_message", t2)
+    report = await ing.ingest_pending()
+    assert report.invalid_decisions == 1 and report.added == 1
+    assert store.get(1).status == "active"  # the preference is untouched
+    assert any("Ravi" in m.content for m in store.list_memories())  # and the new fact is kept
+    vault.close()
+
+
+async def test_extracting_the_same_assertion_again_reinforces_instead_of_versioning(tmp_path, key):  # noqa: F811
+    text = "Please remember I prefer meetings after 2pm"
+    table = {text: [cand("User prefers meetings scheduled after 2pm", "preference")]}
+    vault, store, llm, ing = setup(tmp_path, key, table)
+    ev = store.record_event("chat", "user_message", text)
+    action, first = await ing.remember_explicit(
+        "User prefers meetings after 2pm", "preference", event_ids=[ev]
+    )
+    assert action == "ADD"
+    llm.force_decision = {"action": "SUPERSEDE", "target_id": first}  # even if the model says so
+    report = await ing.ingest_pending()
+    assert report.noop == 1 and report.superseded == 0 and llm.decide_calls == 0
+    assert [m.id for m in store.list_memories()] == [first] and store.get(first).access_count == 1
+    vault.close()
+
+
+async def test_a_changed_value_is_not_swallowed_as_a_near_duplicate(tmp_path, key):  # noqa: F811
+    """Regression from the real-model demo: "after 3pm" scored 0.98 against "after 2pm"."""
+    vault, store, llm, ing = setup(tmp_path, key, {})
+    ing.dup_threshold = 0.75  # the fake embedder's cosine for a one-word change is about 0.8
+    action, first = await ing.remember_explicit("User prefers meetings after 2pm", "preference")
+    assert action == "ADD"
+    action, second = await ing.remember_explicit("User prefers meetings after 3pm", "preference")
+    assert action == "SUPERSEDE" and second != first
+    assert store.get(first).status == "superseded"
+    assert [m.content for m in store.list_memories()] == ["User prefers meetings after 3pm"]
+    # a true restatement (no new words) is still treated as the same fact
+    action, again = await ing.remember_explicit("prefers meetings after 3pm", "preference")
+    assert action == "NOOP" and again == second
     vault.close()

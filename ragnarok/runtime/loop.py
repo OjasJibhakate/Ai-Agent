@@ -26,7 +26,7 @@ from ragnarok.memory.store import MemoryStore
 from ragnarok.policy import permissions
 from ragnarok.runtime.context import build_messages
 from ragnarok.runtime.gateway import ChatResult, GatewayError
-from ragnarok.runtime.tools import MAX_RESULT_CHARS, Tool, memory_tools
+from ragnarok.runtime.tools import CURRENT_EVENT, MAX_RESULT_CHARS, Tool, memory_tools
 
 MAX_STEPS = 6  # model calls per user turn
 LOOP_GUARD = 3  # the same call with the same arguments this many times stops the turn
@@ -99,7 +99,8 @@ class Agent:
         on_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> TurnResult:
         t_start = time.perf_counter()
-        await self._log(session, "user_message", text)
+        user_event = await self._log(session, "user_message", text)
+        CURRENT_EVENT.set(user_event)
 
         # hot path: retrieval with no model call besides the query embedding
         t = time.perf_counter()
@@ -198,10 +199,10 @@ class Agent:
         result.trace.append(ToolTrace(name, clean, decision.rule, True, output))
         return output
 
-    async def _log(self, session: Session, kind: str, payload: str) -> None:
+    async def _log(self, session: Session, kind: str, payload: str) -> int | None:
         # tool events are never merged by the dedupe window: each call is its own record
         dedupe = 300 if kind in ("user_message", "assistant_message") else None
-        await asyncio.to_thread(
+        return await asyncio.to_thread(
             self.store.record_event,
             "chat",
             kind,

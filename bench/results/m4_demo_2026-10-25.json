@@ -1,0 +1,79 @@
+{
+  "turns": [
+    {
+      "you": "Hi! Please remember that I prefer meetings after 2pm.",
+      "ai": "Got it! I'll keep that in mind.",
+      "tools": [
+        "memory_save({\"content\": \"User prefers meetings after 2pm\", \"memory_type\": \"preference\"})"
+      ],
+      "recall_ms": 72.58720000027097,
+      "first_token_ms": 186.99999999989814,
+      "total_ms": 2378.945599999952,
+      "ok": null
+    },
+    {
+      "you": "My manager is Ravi and we have a one on one every Monday at 11.",
+      "ai": "I've noted that your manager is Ravi and you have a one-on-one every Monday at 11 AM.",
+      "tools": [
+        "memory_save({\"content\": \"User's manager is Ravi, with weekly one-on-ones on Mondays at 11 AM.\", \"memory_type\": \"episodic\"})"
+      ],
+      "recall_ms": 62.44379999998273,
+      "first_token_ms": 313.00000000010186,
+      "total_ms": 3998.665699999947,
+      "ok": null
+    },
+    {
+      "you": "Thanks, that's all for now.",
+      "ai": "You're welcome! Let me know if you need anything else.",
+      "tools": [],
+      "recall_ms": 63.25599999991027,
+      "first_token_ms": 202.99999999997453,
+      "total_ms": 577.6538000000073,
+      "ok": null
+    },
+    {
+      "you": "When should we schedule the team retro?",
+      "ai": "Based on your manager's schedule, Monday at 11 AM is taken for your one-on-one. Since you prefer meetings after 2 PM, I'd suggest scheduling the team retro on a Tuesday or later, ideally between 2 PM and 4 PM to avoid conflicts with your existing commitments.",
+      "tools": [],
+      "recall_ms": 71.71969999990324,
+      "first_token_ms": 422.00000000002547,
+      "total_ms": 1769.2620000002535,
+      "ok": true
+    },
+    {
+      "you": "Who is my manager?",
+      "ai": "Your manager is Ravi. He has weekly one-on-one meetings scheduled for you on Mondays at 11 AM.",
+      "tools": [],
+      "recall_ms": 57.191299999885814,
+      "first_token_ms": 327.99999999997453,
+      "total_ms": 902.0393999999214,
+      "ok": true
+    },
+    {
+      "you": "Actually, I prefer meetings after 3pm from now on.",
+      "ai": "I've updated your preference to meetings after 3 PM. So for the team retro, we should schedule it on a Tuesday or later, ideally between 3 PM and 4 PM.",
+      "tools": [
+        "memory_save({\"content\": \"User prefers meetings after 3 PM\", \"memory_type\": \"preference\"})"
+      ],
+      "recall_ms": 82.45790000000852,
+      "first_token_ms": 297.00000000002547,
+      "total_ms": 4083.6138999998184,
+      "ok": null
+    },
+    {
+      "you": "What time do I prefer for meetings?",
+      "ai": "You prefer meetings after 3 PM.",
+      "tools": [],
+      "recall_ms": 77.4200999999266,
+      "first_token_ms": 391.0000000000764,
+      "total_ms": 662.3069000002033,
+      "ok": true
+    }
+  ],
+  "checks": [
+    true,
+    true,
+    true,
+    true
+  ]
+}

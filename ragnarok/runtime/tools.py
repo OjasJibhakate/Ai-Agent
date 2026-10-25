@@ -4,6 +4,7 @@ fs/network needs (AGENTS.md hard rule 4). The description is what the model sees
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -14,6 +15,8 @@ from ragnarok.memory.models import format_memory
 from ragnarok.memory.service import MemoryService
 from ragnarok.policy.permissions import Risk
 
+# The user-message event of the turn being answered; set by the loop, read by memory_save.
+CURRENT_EVENT: ContextVar[int | None] = ContextVar("current_event", default=None)
 MAX_RESULT_CHARS = 4000  # about 1,000 tokens; longer output is cut with a note
 
 
@@ -82,7 +85,10 @@ def memory_tools(svc: MemoryService, ingestor: Ingestor) -> list[Tool]:
         return "\n".join(format_memory(h.memory) for h in hits)
 
     async def memory_save(args: MemorySaveArgs) -> str:
-        action, memory_id = await ingestor.remember_explicit(args.content, args.memory_type)
+        event = CURRENT_EVENT.get()
+        action, memory_id = await ingestor.remember_explicit(
+            args.content, args.memory_type, event_ids=[event] if event else []
+        )
         said = {
             "ADD": "Saved",
             "UPDATE": "Already known, reinforced",

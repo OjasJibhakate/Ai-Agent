@@ -149,13 +149,20 @@ class Ingestor:
         *,
         sim_floor: float = 0.6,
         dup_threshold: float = 0.97,
+        same_slot: float = 0.9,
+        same_source: float = 0.85,
         batch_size: int = 8,
     ) -> None:
         self.store = store
         self.embedder = embedder
         self.llm = llm
         self.sim_floor = sim_floor  # below this, neighbours are unrelated: plain ADD
-        self.dup_threshold = dup_threshold  # above this, the memory is already stored
+        self.dup_threshold = dup_threshold  # at/above, and nothing new: already stored
+        # Measured nomic cosines overlap (reworded 0.89-0.99, changed value 0.63-0.98, different
+        # fact 0.53-0.82), so similarity can't pick SUPERSEDE vs ADD. It only decides how to
+        # avoid losing information.
+        self.same_slot = same_slot  # at/above: a reword or change of the stored fact
+        self.same_source = same_source  # at/above, from the same event: the same assertion
         self.batch_size = batch_size
         self._system = _prompt("system.txt")
 
@@ -218,14 +225,18 @@ class Ingestor:
     # ---- single-candidate path (also used for explicit "remember ..." saves) -----------------
 
     async def remember_explicit(
-        self, text: str, memory_type: str = "semantic", importance: float = 0.8
+        self,
+        text: str,
+        memory_type: str = "semantic",
+        importance: float = 0.8,
+        event_ids: Sequence[int] = (),
     ) -> tuple[str, int]:
         """Save what the user asked to remember, still checking for duplicates and changes."""
         cand = Candidate(
             content=text, memory_type=memory_type, origin="user_stated", importance=importance
         )  # type: ignore[arg-type]
         report = IngestReport(candidates=1)
-        memory_id = await self.process(cand, [], report, kinds={"user_message"})
+        memory_id = await self.process(cand, event_ids, report, kinds={"user_message"})
         action = (
             "ADD"
             if report.added
@@ -259,11 +270,24 @@ class Ingestor:
                 **extra,
             )
 
-        if related and related[0][1] >= self.dup_threshold:
+        # A near-duplicate must also add no new words: "after 2pm" vs "after 3pm" scores 0.98 in
+        # nomic but is a changed fact, and dropping it as a duplicate silently loses the change.
+        if (
+            related
+            and related[0][1] >= self.dup_threshold
+            and not _adds_information(cand.content, related[0][0].content)
+        ):
             target = related[0][0]
             await asyncio.to_thread(self.store.reinforce, target.id, list(event_ids))
             report.noop += 1
             return target.id
+        if related and related[0][1] >= self.same_source:
+            top = related[0][0]
+            if await asyncio.to_thread(self.store.has_source, top.id, list(event_ids)):
+                # extracted again from the event that already produced it (e.g. explicit save)
+                await asyncio.to_thread(self.store.reinforce, top.id, list(event_ids))
+                report.noop += 1
+                return top.id
         if not related:
             report.added += 1
             return await asyncio.to_thread(add)
@@ -275,19 +299,25 @@ class Ingestor:
             decision = Decision(action="ADD")
         target = next((m for m, _ in related if m.id == decision.target_id), None)
 
-        if decision.action == "NOOP":
-            report.noop += 1
-            if target:
-                await asyncio.to_thread(self.store.reinforce, target.id, list(event_ids))
-                return target.id
-            return related[0][0].id
-        if decision.action == "UPDATE" and target:
-            if _adds_information(cand.content, target.content):
-                decision = Decision(action="SUPERSEDE", target_id=target.id)  # keep the new detail
-            else:
-                await asyncio.to_thread(self.store.reinforce, target.id, list(event_ids))
-                report.updated += 1
-                return target.id
+        if decision.action in ("NOOP", "UPDATE"):
+            covered, score = next(
+                ((m, s) for m, s in related if m.id == decision.target_id), related[0]
+            )
+            if not _adds_information(cand.content, covered.content):
+                await asyncio.to_thread(self.store.reinforce, covered.id, list(event_ids))
+                if decision.action == "NOOP":
+                    report.noop += 1
+                else:
+                    report.updated += 1
+                return covered.id
+            # The model said "nothing new" but the stored memory doesn't contain this statement.
+            # Dropping it would lose information, so keep it: as a new version if it reads like a
+            # reword/change of that memory, otherwise as a separate memory.
+            report.invalid_decisions += 1
+            target = covered
+            decision = Decision(
+                action="SUPERSEDE" if score >= self.same_slot else "ADD", target_id=covered.id
+            )
         if decision.action == "SUPERSEDE" and target:
             if origin == "inferred" and target.origin == "user_stated":
                 new_id = await asyncio.to_thread(add)

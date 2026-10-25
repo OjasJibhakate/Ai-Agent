@@ -323,6 +323,17 @@ class MemoryStore:
                 [(memory_id, e) for e in event_ids],
             )
 
+    def has_source(self, memory_id: int, event_ids: Sequence[int]) -> bool:
+        """True if the memory was already derived from any of these events."""
+        if not event_ids:
+            return False
+        marks = ",".join("?" for _ in event_ids)
+        row = self.vault.query(
+            f"SELECT 1 FROM memory_sources WHERE memory_id = ? AND event_id IN ({marks}) LIMIT 1",
+            (memory_id, *event_ids),
+        )
+        return bool(row)
+
     def link(self, from_id: int, to_id: int, relation: str) -> None:
         """Record a relation (derived_from, related, contradicts) between two memories."""
         with self.vault.transaction() as con:
