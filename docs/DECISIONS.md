@@ -1,0 +1,145 @@
+# Decisions
+
+One entry per decision: the newest number goes at the bottom, and entries are never edited away. If a decision changes, add a new entry that supersedes the old one.
+Format: context → decision → alternatives → consequences → revisit if.
+
+---
+
+### D-001 — Focus on the five pillars the PDF stresses
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Context:** The proposal's requirements put most weight on skills (FR2), planning (FR3), triggers (FR4), encryption (NFR1.2),
+  and recovery (NFR3). The earlier team design spent much of its effort on voice and screen capture, which the PDF doesn't ask for.
+- **Decision:** Design and build around these five pillars. Memory, UI, and performance work exist to support them.
+- **Consequences:** Voice and screen capture move to out-of-scope (D-016). The build plan schedules the pillars first.
+- **Revisit if:** The judging criteria emphasize something else.
+
+### D-002 — Build it as an agent harness, the way Claude Code and Codex are built
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Context:** The requirements are about tool use, autonomy, safety, and recovery. Production agents solve these with the same
+  ingredients: a model in a tool-calling loop, permission rules and approvals, a sandbox, and resumable session logs.
+- **Decision:** Write our own small loop (~300 lines) with these ingredients, and use no agent framework.
+- **Alternatives:** LangGraph, CrewAI, and AutoGen were rejected. They add dependencies and abstraction layers, they're harder to debug live, and they give
+  us less control over prompt size, which matters most on a 4B model.
+- **Consequences:** We own the loop, context building, and compaction code. Every token in every prompt is under our control.
+
+### D-003 — One resident chat model, `qwen3.5:4b`, plus `nomic-embed-text`
+- **Date:** 2026-10-25 · **Status:** accepted, pending the Phase 0 bench
+- **Context:** The RTX 4050 has 6 GB of VRAM. Swapping models in Ollama costs seconds, and a model that spills to the CPU slows down several times.
+- **Decision:** One chat model handles every call type, including planning, verification, extraction, and chat. It stays pinned alongside the embedder.
+- **Alternatives:**
+  - `qwen3.5:9b` (Q4_K_M 6.6 GB): doesn't fit.
+  - `qwen3:8b` (5.2 GB): leaves no room for the KV cache.
+  - A big + small two-model setup: swap lag, and the two models don't fit together.
+- **Consequences:** Each call has to be small and focused (step sub-agents, top-k tools, typed checks).
+- **Revisit if:** The bench shows poor tool-call accuracy. Then try `qwen3:4b` or the `qwen3.5:4b-mtp-q4_K_M` build.
+
+### D-004 — Ollama configuration and local-only mode
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Decision:**
+  - Set `OLLAMA_NO_CLOUD=1`, `OLLAMA_KEEP_ALIVE=-1`, `OLLAMA_MAX_LOADED_MODELS=2`, `OLLAMA_NUM_PARALLEL=1`,
+    `OLLAMA_CONTEXT_LENGTH=16384`, `OLLAMA_FLASH_ATTENTION=1`, and `OLLAMA_KV_CACHE_TYPE=q8_0`.
+  - The gateway sends the same `num_ctx` on every request and rejects `-cloud` model names and non-loopback hosts.
+- **Why:** The Ollama FAQ documents local-only mode, notes that memory scales with parallel × context, and says `q8_0` uses about half the KV memory of `f16`.
+  Constant load options avoid model reloads.
+- **Revisit if:** `ollama ps` shows a CPU share. Then drop to `num_ctx` 8192.
+
+### D-005 — Storage: one SQLCipher vault, with vectors held in RAM
+- **Date:** 2026-10-25 · **Status:** accepted, pending the Phase 0 FTS5 check
+- **Decision:**
+  - A single SQLCipher 4 file holds events, memory, plans, the audit log, metrics, and the skill registry.
+  - FTS5 handles exact search. Embeddings are stored as BLOBs and searched exactly with numpy in RAM.
+  - The library is `sqlcipher3`; the fallback is `apsw-sqlite3mc`.
+- **Alternatives:** Turbovec, FAISS, Chroma, and Qdrant are unnecessary below about 100k vectors, and each adds a separate store that would also need encrypting.
+- **Consequences:** One file to encrypt, back up, and recover. `temp_store=MEMORY` keeps temp data off the disk.
+
+### D-006 — Key handling
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Decision:**
+  - A random 256-bit vault key is wrapped with AES-256-GCM under an Argon2id key derived from the user's passphrase.
+  - A recovery code provides a second wrap.
+  - An optional DPAPI-sealed copy allows unattended unlock at login.
+  - Account secrets live in Windows Credential Manager.
+- **Consequences:** Unattended restore after a reboot (NFR3.2) needs the DPAPI opt-in. The threat model is written down in ARCHITECTURE §6.3.
+
+### D-007 — Recovery through event sourcing, log-before-act, and idempotency keys
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Decision:**
+  - Every action is an append-only event in the vault. A `tool_call` event is committed with `synchronous=FULL` before any side effect.
+  - Our MCP servers accept idempotency keys, so retries after a crash can't duplicate an action.
+  - Snapshots are taken every 50 events, so replays stay short.
+  - The daemon runs as a Task Scheduler task that restarts on failure.
+- **Consequences:** Restore is replay, with an expected time under 1 s. Tools that can't be made idempotent are marked `interrupted` after a crash, and the user is asked what happened.
+
+### D-008 — Planning: plan tool, step sub-agents, typed verifier, failure ladder
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Decision:**
+  - The model emits a JSON plan with `after` dependencies listed in order, so the plan is acyclic by construction.
+  - Each step runs as a fresh, short-context sub-agent.
+  - `done_when` prefers typed checks over model judgments.
+  - Failures climb a ladder: retry → fix → re-plan → degrade (independent steps continue).
+- **Alternatives:**
+  - A pure ReAct loop: small models drift on long loops.
+  - A separate upfront DAG compiler: more machinery than needed.
+- **Consequences:** Contexts stay small, which keeps calls fast. NFR3.1 comes almost for free.
+
+### D-009 — Skills are `SKILL.md` folders, MCP servers, and built-in tools
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Decision:**
+  - `SKILL.md` uses the Claude Code frontmatter, with Ragnarok fields under a `ragnarok:` key. MCP is the interface for API wrappers.
+  - Registration runs the skill's tests in the sandbox, asks the owner to approve its permissions, and pins a content hash. A changed hash disables the skill.
+  - Tools are chosen by embedding top-k, and the tool set is frozen per turn.
+- **Consequences:** Skills are portable, any existing MCP server can be plugged in, and nothing changes silently.
+
+### D-010 — A native Windows sandbox
+- **Date:** 2026-10-25 · **Status:** accepted, pending a 3-hour spike
+- **Context:** WSL isn't installed and there's no Docker. Docker Desktop would cost 2–4 GB of the 16 GB RAM.
+- **Decision:**
+  - Follow Codex's unelevated Windows sandbox design: a write-restricted token, with ACLs only on workspace folders.
+  - Add a Job Object for limits and kill-on-close, an offline environment (plus an optional firewall rule on a dedicated Python copy), and a Python audit hook as defense in depth.
+  - Modes: `read-only`, `workspace-write`, `full-access`.
+- **Fallback:** a low-integrity process with a low-labelled workspace, plus the Job Object.
+- **Consequences:** Reads and network aren't OS-blocked by the token alone. We state this openly.
+
+### D-011 — Triggers run headless sessions in a background profile
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Decision:**
+  - Cron, folder, mail, calendar, system, and date triggers each start a headless session with the `background` profile (read-only sandbox, no sending or deleting).
+  - Side effects wait in an Inbox.
+  - A `trigger_fires` table with a unique `(trigger_id, dedupe_key)` index makes each event fire once, even across restarts.
+  - Catch-up after downtime uses cursors and snapshots.
+- **Consequences:** Always-on behavior can't take consequential actions without approval.
+
+### D-012 — Performance: a zero-LLM hot path and one priority lane
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Decision:**
+  - Retrieval and intent classification (NFR2.1) use embeddings, FTS5, RRF, and nearest-example routing, with a model call only on low confidence.
+  - One priority lane sits in front of Ollama, and interactive work preempts background work.
+  - Prompts put the stable prefix first so the prompt cache is reused.
+- **Consequences:** We expect NFR2.1 well under 100 ms. The user never waits behind consolidation or trigger work.
+
+### D-013 — Interfaces: a daemon with JSON-RPC over WebSocket, a React UI, and a CLI
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Decision:** Thin clients talk to one daemon. The web UI is served as static files, the CLI is Typer + Rich, and a tray icon and toasts complete the set.
+- **Alternatives:** Electron or Tauri. Electron costs RAM, and Tauri needs a Rust toolchain.
+
+### D-014 — Python 3.12 via uv
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Context:** The installed Python is the Microsoft Store 3.13 build, which redirects some AppData writes. Windows py3.12 wheels were confirmed for
+  `sqlcipher3` 0.6.4, `apsw-sqlite3mc` 3.54.0.0, `pywin32` 312, `mcp` 2.3.0, `pystray` 0.19.5, and `windows-toasts` 1.3.1.
+- **Decision:** Use a uv-managed Python 3.12 for the project.
+
+### D-015 — Runtime data lives outside OneDrive
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Decision:** The vault, keys, logs, workspaces, and the sandbox Python go in `%LOCALAPPDATA%\Ragnarok\`. The project folder under OneDrive holds only code and docs.
+
+### D-016 — Out of scope: voice, screen capture, GUI automation
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Context:** None of these appear in the PDF. They add latency, GPU and CPU contention, and demo risk.
+- **Revisit if:** All the "must" and "should" items are done before hour 30.
+
+### D-017 — Project context and logs
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Decision:**
+  - `AGENTS.md` holds the project context; Codex reads it directly, and `CLAUDE.md` imports it for Claude Code.
+  - `docs/DECISIONS.md` records why things were chosen; `docs/WORKLOG.md` records what happened and what was measured.
+  - Old design docs are kept in `docs/history/`.
