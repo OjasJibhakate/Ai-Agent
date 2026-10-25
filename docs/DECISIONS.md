@@ -429,3 +429,14 @@ Format: context → decision → alternatives → consequences → revisit if.
   - `full` mode with the command runner can do real damage that the refusal list does not cover; deletes through `delete_path` are recoverable, anything a command does is not.
   - No editing of Word/PowerPoint/Excel files that already exist, no images or charts in decks, no `.docx` tables.
 - **Verified:** 981 tests; real PowerPoint, Excel and Word open the generated files; the real Recycle Bin call works; real PowerShell runs for the command tests (timeout kill, Unicode, environment, output cap); everyday battery on the real model **25 of 26** (the 26th was a too-strict check, fixed in the check).
+
+### D-039 - Terminal look: Claude Code-style layout, 24-bit colour, and motion that switches itself off
+- **Date:** 2026-10-26 - **Status:** accepted
+- **Context:** The owner asked for a more colourful, unique, minimal and professional CLI "like Claude Code", with animations and transitions.
+- **Decision:**
+  - Layout follows Claude Code: a rounded welcome box, a hairline above the prompt that carries the mode, a round bullet for answers, a hook-arrow line for tool results, a star spinner with elapsed seconds, and a "Do you want to proceed?" permission card.
+  - Colour is 24-bit (violet to cyan gradient) when the terminal says it supports it (`COLORTERM`, `WT_SESSION`, VS Code); otherwise the old 256-colour codes. `RAGNAROK_256=1` forces the fallback.
+  - Motion: the welcome box draws itself and a light sweeps over the name; the spinner star changes colour and a highlight passes over its label; the goodbye star closes. Motion runs only on a colour terminal, never into a pipe or log, and `RAGNAROK_NO_ANIM=1` turns it off. Every wait is `asyncio.sleep`, so the event loop is never blocked.
+  - Still plain ANSI: no new dependency (the project has no `rich`).
+- **Consequences:** The old boxed banner and the `allow? [y/N]` wording are gone; tests were updated. The welcome animation adds about 0.7 s once at start.
+- **Revisit if:** the animation feels slow on the owner's terminal (lower `pace` or drop the sweep).

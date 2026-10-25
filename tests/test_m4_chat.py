@@ -53,7 +53,7 @@ async def test_first_run_welcome_and_goodbye(tmp_path, key):  # noqa: F811
     app, rt, out = screen(tmp_path, key, lines=["/quit"])
     await app.run()
     shown = text(out)
-    assert "Welcome." in shown and "0 memories" in shown and "encrypted" in shown
+    assert "Welcome to Ragnarok" in shown and "0 memories" in shown and "encrypted" in shown
     assert "open steam" in shown  # the first-run hint
     assert "See you soon." in shown
     assert rt.gateway.warmed == 1  # the models were warmed in the background
@@ -65,7 +65,7 @@ async def test_returning_user_sees_their_memory_count(tmp_path, key):  # noqa: F
     await rt.svc.remember("Prefers meetings after 14:00", "preference", "chat")
     await app.run()
     shown = text(out)
-    assert "Welcome back." in shown and "1 memory" in shown
+    assert "Welcome back to Ragnarok" in shown and "1 memory" in shown
     rt.vault.close()
 
 
@@ -75,7 +75,7 @@ async def test_answer_streams_with_marker_and_footer_with_the_time(tmp_path, key
     )
     await app.run()
     shown = text(out)
-    assert " ◆ Line one.\n   Line two." in shown  # continuation lines are indented under the text
+    assert " ● Line one.\n   Line two." in shown  # continuation lines are indented under the text
     assert re.search(r"^ {3}\d+\.\ds$", shown, re.M)  # a dim "0.0s" footer
     rt.vault.close()
 
@@ -90,7 +90,7 @@ async def test_finished_action_gets_a_check_mark_and_the_tool_in_the_footer(tmp_
     await app.run()
     shown = text(out)
     assert " ✓ Saved: Prefers tea [m:1]" in shown
-    assert "↳ memory_save" in shown
+    assert "⎿  memory_save" in shown
     rt.vault.close()
 
 

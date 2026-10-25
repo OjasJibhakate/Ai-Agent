@@ -2,8 +2,11 @@
 
 One hue per kind of thing, so the screen reads at a glance: violet for the assistant, sky blue for
 you and for commands, teal for the model and tools, amber for memory, green for success, coral for
-errors. Colour turns itself off when output is not a terminal or NO_COLOR is set. If the console
-cannot print box-drawing characters (or RAGNAROK_ASCII=1) it falls back to plain ASCII.
+errors. Chrome (rules, labels) is a quiet slate. Where the terminal supports 24-bit colour (Windows
+Terminal, VS Code, anything that sets COLORTERM) the same hues are drawn from a finer palette with
+a smooth violet-to-cyan gradient; elsewhere they fall back to 256 colours. Colour turns itself off
+when output is not a terminal or NO_COLOR is set; RAGNAROK_256=1 forces the 256-colour palette. If
+the console cannot print box-drawing characters (or RAGNAROK_ASCII=1) it falls back to plain ASCII.
 """
 
 from __future__ import annotations
@@ -13,23 +16,25 @@ import os
 import re
 import shutil
 import sys
+import textwrap
+import time
 from dataclasses import dataclass
 from typing import TextIO
 
 from ragnarok import __version__
 
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
-FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"  # braille spinner
+FRAMES = "✢✳✶✻✽✻✶✳"  # a star that opens and closes
 ASCII_FRAMES = "|/-\\"
 
 UNICODE = {
-    "prompt": "›", "bot": "◆", "tool": "↳", "ok": "✓", "no": "✗",
+    "prompt": ">", "bot": "●", "tool": "⎿", "ok": "✓", "no": "✗", "live": "●", "spark": "✦",
     "dot": "·", "tl": "╭", "tr": "╮", "bl": "╰", "br": "╯",
     "h": "─", "v": "│", "ellipsis": "…",
 }  # fmt: skip
 PLAIN = {
-    "prompt": ">", "bot": "*", "tool": "->", "ok": "+", "no": "x", "dot": "-", "tl": "+",
-    "tr": "+", "bl": "+", "br": "+", "h": "-", "v": "|", "ellipsis": "...",
+    "prompt": ">", "bot": "*", "tool": "|_", "ok": "+", "no": "x", "live": "*", "spark": "*",
+    "dot": "-", "tl": "+", "tr": "+", "bl": "+", "br": "+", "h": "-", "v": "|", "ellipsis": "...",
 }  # fmt: skip
 
 # 256-colour codes
@@ -40,9 +45,43 @@ TYPE_COLOR = {  # memory types
     "procedural": MINT, "summary": STEEL,
 }  # fmt: skip
 
+# The same hues as 24-bit colour, tuned to sit together on a dark background.
+RGB = {
+    SKY: (96, 165, 250), VIOLET: (167, 139, 250), TEAL: (45, 212, 191), AMBER: (232, 185, 95),
+    GREEN: (120, 214, 150), CORAL: (240, 128, 128), STEEL: (100, 116, 139), MINT: (110, 231, 183),
+}  # fmt: skip
+GRADIENT_STOPS = ((167, 139, 250), (96, 165, 250), (34, 211, 238))  # violet -> blue -> cyan
+BASE16 = (
+    (0, 0, 0), (205, 49, 49), (13, 188, 121), (229, 229, 16), (36, 114, 200), (188, 63, 188),
+    (17, 168, 205), (229, 229, 229), (102, 102, 102), (241, 76, 76), (35, 209, 139),
+    (245, 245, 67), (59, 142, 234), (214, 112, 214), (41, 184, 219), (255, 255, 255),
+)  # fmt: skip
+
 
 def visible_len(text: str) -> int:
     return len(_ANSI.sub("", text))
+
+
+def _xterm_rgb(code: int) -> tuple[int, int, int]:
+    """The RGB value a 256-colour code stands for (cube and grey ramp; the base 16 approximated)."""
+    if code >= 232:
+        level = 8 + 10 * (code - 232)
+        return level, level, level
+    if code >= 16:
+        n = code - 16
+        steps = (0, 95, 135, 175, 215, 255)
+        return steps[n // 36], steps[n // 6 % 6], steps[n % 6]
+    return BASE16[code]
+
+
+def _supports_truecolor() -> bool:
+    if os.environ.get("RAGNAROK_256") == "1":
+        return False
+    return (
+        os.environ.get("COLORTERM", "").lower() in ("truecolor", "24bit")
+        or "WT_SESSION" in os.environ
+        or os.environ.get("TERM_PROGRAM") == "vscode"
+    )
 
 
 def _enable_windows_vt() -> bool:
@@ -84,24 +123,47 @@ class Console:
         *,
         color: bool | None = None,
         ascii_only: bool | None = None,
+        truecolor: bool | None = None,
+        animate: bool | None = None,
     ) -> None:
         self.out = out or sys.stdout
         self.tty = bool(getattr(self.out, "isatty", lambda: False)())
         self.color = (self.tty and "NO_COLOR" not in os.environ) if color is None else color
         if color is None and self.color and os.name == "nt":
             self.color = _enable_windows_vt()  # auto-detect only; an explicit colour=True wins
+        if truecolor is None:  # auto-detect only; an explicit colour=True stays on 256 colours
+            truecolor = self.color and color is None and _supports_truecolor()
+        self.truecolor = truecolor and self.color
         wants_ascii = os.environ.get("RAGNAROK_ASCII") == "1" if ascii_only is None else ascii_only
         self.ascii = wants_ascii or not _can_print(self.out, "".join(UNICODE.values()) + FRAMES)
         self.g = PLAIN if self.ascii else UNICODE
+        # Motion only on a real colour terminal, never into a log or a pipe.
+        if animate is None:
+            animate = self.tty and self.color and os.environ.get("RAGNAROK_NO_ANIM") != "1"
+        self.animate = animate and self.color
+        self.pace = 1.0  # multiplier on every animation delay (tests set 0)
+
+    async def beat(self, seconds: float) -> None:
+        """Wait one animation tick (without blocking the event loop)."""
+        if self.pace:
+            await asyncio.sleep(seconds * self.pace)
 
     # ---- styling ---------------------------------------------------------------------------
+
+    def fg(self, code: int | str) -> str:
+        """The SGR colour parameters for a palette code (or a ready-made string)."""
+        if isinstance(code, str):
+            return code
+        if self.truecolor:
+            r, g, b = RGB.get(code) or _xterm_rgb(code)
+            return f"38;2;{r};{g};{b}"
+        return f"38;5;{code}"
 
     def paint(self, code: int | str, text: str, *, bold: bool = False, dim: bool = False) -> str:
         if not self.color or not text:
             return text
         attrs = ("1;" if bold else "") + ("2;" if dim else "")
-        color = code if isinstance(code, str) else f"38;5;{code}"
-        return f"\x1b[{attrs}{color}m{text}\x1b[0m"
+        return f"\x1b[{attrs}{self.fg(code)}m{text}\x1b[0m"
 
     def dim(self, t: str) -> str:
         return self.paint(STEEL, t)
@@ -130,14 +192,71 @@ class Console:
     def bad(self, t: str) -> str:
         return self.paint(CORAL, t)
 
-    def gradient(self, text: str) -> str:
-        """Letters shaded from violet to cyan; plain text when colour is off."""
+    def _ramp_rgb(self, t: float, strength: float = 1.0) -> tuple[int, int, int]:
+        pos = min(1.0, max(0.0, t)) * (len(GRADIENT_STOPS) - 1)
+        i = min(int(pos), len(GRADIENT_STOPS) - 2)
+        frac = pos - i
+        a, b = GRADIENT_STOPS[i], GRADIENT_STOPS[i + 1]
+        r, g, bl = (round((a[k] + (b[k] - a[k]) * frac) * strength) for k in range(3))
+        return r, g, bl
+
+    def ramp(self, t: float, strength: float = 1.0) -> str:
+        """The colour a fraction `t` (0 to 1) of the way along the violet-to-cyan gradient."""
+        if not self.truecolor:
+            steps = len(TITLE_GRADIENT)
+            return f"38;5;{TITLE_GRADIENT[min(int(min(1.0, max(0.0, t)) * steps), steps - 1)]}"
+        r, g, bl = self._ramp_rgb(t, strength)
+        return f"38;2;{r};{g};{bl}"
+
+    def gradient(self, text: str, glow: float | None = None) -> str:
+        """Letters shaded from violet to cyan; plain text when colour is off.
+
+        `glow` is a character position where a bright highlight sits (used to sweep light along
+        the wordmark); None draws the plain gradient.
+        """
         if not self.color:
             return text
-        return "".join(
-            self.paint(TITLE_GRADIENT[i * len(TITLE_GRADIENT) // len(text)], ch, bold=True)
-            for i, ch in enumerate(text)
-        )
+        last = max(1, len(text) - 1)
+        parts = []
+        for i, ch in enumerate(text):
+            if ch == " ":
+                parts.append(ch)
+                continue
+            lift = 0.0 if glow is None else max(0.0, 1 - abs(i - glow) / 3)
+            if self.truecolor:
+                r, g, b = (round(c + (255 - c) * lift * 0.8) for c in self._ramp_rgb(i / last))
+                code: int | str = f"38;2;{r};{g};{b}"
+            else:
+                code = 255 if lift > 0.5 else self.ramp(i / last)
+            parts.append(self.paint(code, ch, bold=True))
+        return "".join(parts)
+
+    def shimmer(self, text: str, centre: float) -> str:
+        """Quiet slate text with a soft highlight centred on character position `centre`."""
+        if not self.color:
+            return text
+        parts = []
+        for i, ch in enumerate(text):
+            lift = max(0.0, 1 - abs(i - centre) / 4)
+            if self.truecolor:
+                r, g, b = (
+                    round(lo + (hi - lo) * lift)
+                    for lo, hi in zip((120, 132, 150), (240, 244, 255), strict=True)
+                )
+                parts.append(self.paint(f"38;2;{r};{g};{b}", ch))
+            else:
+                parts.append(self.paint(255 if lift > 0.5 else STEEL, ch))
+        return "".join(parts)
+
+    def rule(self, width: int | None = None) -> str:
+        """A hairline: a faded gradient on 24-bit terminals, quiet slate elsewhere."""
+        n = self.width if width is None else width
+        line = self.g["h"] * n
+        if not self.color:
+            return line
+        if not self.truecolor:
+            return self.dim(line)
+        return "".join(self.paint(self.ramp(i / max(1, n - 1), 0.5), self.g["h"]) for i in range(n))
 
     @property
     def width(self) -> int:
@@ -149,60 +268,108 @@ class Console:
         self.out.write(text + end)
         self.out.flush()
 
-    def banner(self, w: Welcome) -> None:
-        g, width = self.g, self.width
+    def _edge(self, left: str, right: str, width: int) -> list[str]:
+        """The cells of a box's top or bottom edge, shaded along the gradient."""
+        fill = width - 2
+        cells = [left] + [self.g["h"]] * fill + [right]
+        if not self.color:
+            return cells
+        if not self.truecolor:
+            return [self.paint(VIOLET, c) for c in cells]
+        return [self.paint(self.ramp(i / max(1, width - 1), 0.8), c) for i, c in enumerate(cells)]
 
-        def row(content: str = "") -> str:
-            pad = max(0, width - 4 - visible_len(content))
-            return f"{self.dim(g['v'])} {content}{' ' * pad} {self.dim(g['v'])}"
+    def banner_lines(self, w: Welcome, glow: float | None = None) -> list[str]:
+        """The welcome screen as lines. `glow` lights the wordmark at one position (animation)."""
+        g = self.g
+        box = self.width - 1  # one column of margin keeps it inside the console width
+
+        def row(content: str = "", right: str = "") -> str:
+            gap = max(0, box - 4 - visible_len(content) - visible_len(right))
+            side = self.paint(VIOLET, g["v"])
+            return f" {side} {content}{' ' * gap}{right} {side}"
 
         def label(text: str) -> str:
-            return self.dim(f"{text:<7}")
+            return self.dim(f"{text:<8}")
 
-        left = (
-            self.dim(g["tl"] + g["h"] + " ")
-            + self.gradient("Ragnarok")
-            + self.dim(f" v{__version__} ")
-        )
-        top = left + self.dim(g["h"] * max(0, width - visible_len(left) - 1) + g["tr"])
+        room = box - 4 - 8
         folder = (
             w.folder
-            if len(w.folder) <= width - 13
-            else g["ellipsis"] + w.folder[-(width - 13 - len(g["ellipsis"])) :]
+            if len(w.folder) <= room
+            else g["ellipsis"] + w.folder[-(room - len(g["ellipsis"])) :]
         )
-        gpu = self.good(w.gpu) if "GPU" in w.gpu else self.amber(w.gpu)
-        count = f"{w.memories} memor{'y' if w.memories == 1 else 'ies'}"
-        dot = self.dim(g["dot"])
-        welcome = "Welcome." if w.first_run else "Welcome back."
-        lines = [
-            top,
-            row(),
-            row(self.bold(welcome)),
-            row(self.faint("Your private assistant. Everything stays on this laptop.")),
-            row(),
-            row(f"{label('model')}{self.teal(w.model)} {dot} {self.faint('local')} {dot} {gpu}"),
-            row(f"{label('memory')}{self.amber(count)} {dot} {self.good('encrypted')}"),
-            row(f"{label('data')}{self.dim(folder)}"),
-            row(),
-            self.dim(g["bl"] + g["h"] * (width - 2) + g["br"]),
-        ]
-        self.write()
-        for line in lines:
-            self.write(" " + line)
-        self.write()
-        if w.first_run:
-            hint = (
-                f"Try {self.sky(chr(34) + 'remember that I prefer meetings after 2pm' + chr(34))}"
-                f", {self.sky(chr(34) + 'open steam' + chr(34))}"
-                f" or {self.sky(chr(34) + 'find my data structure files' + chr(34))}."
-            )
+        live = g["live"]
+        if "GPU" in w.gpu:
+            gpu = self.good(f"{live} {w.gpu}")
+        elif w.gpu == "offline":
+            gpu = self.bad(f"{live} {w.gpu}")
         else:
-            hint = "Ask anything, or tell me something to remember."
-        self.write(" " + hint)
-        self.write(
-            " " + self.dim(f"{self.sky('/help')} commands {g['dot']} {self.sky('/quit')} to leave")
+            gpu = self.amber(f"{live} {w.gpu}")
+        count = f"{w.memories} memor{'y' if w.memories == 1 else 'ies'}"
+        dot = f" {self.dim(g['dot'])} "
+        welcome = "Welcome to " if w.first_run else "Welcome back to "
+        title = (
+            self.paint(VIOLET, g["spark"], bold=True)
+            + " "
+            + self.bold(welcome)
+            + self.gradient("Ragnarok", glow)
         )
-        self.write()
+        lines = [
+            "",
+            " " + "".join(self._edge(g["tl"], g["tr"], box)),
+            row(title, self.dim(f"v{__version__}")),
+            row(),
+            row(self.faint("Private by design. Everything stays on this laptop.")),
+            row(),
+            row(f"{label('model')}{self.teal(w.model)}{dot}{self.faint('local')}{dot}{gpu}"),
+            row(f"{label('memory')}{self.amber(count)}{dot}{self.good(live + ' encrypted')}"),
+            row(f"{label('folder')}{self.dim(folder)}"),
+            " " + "".join(self._edge(g["bl"], g["br"], box)),
+            "",
+        ]
+        if w.first_run:
+            q = chr(34)
+            lines += [
+                " " + self.bold("Tips for getting started"),
+                f"  {self.dim('1.')} Tell me something to remember: "
+                f"{self.sky(q + 'I prefer meetings after 2pm' + q)}",
+                f"  {self.dim('2.')} Ask me to do things: {self.sky(q + 'open steam' + q)}, "
+                f"{self.sky(q + 'find my data structure files' + q)}",
+                f"  {self.dim('3.')} {self.sky('/help')} lists every command",
+            ]
+        else:
+            lines += [
+                "  Ask anything, or tell me something to remember.",
+                "  "
+                + self.dim(f"{self.sky('/help')} commands {g['dot']} {self.sky('/quit')} to leave"),
+            ]
+        return [*lines, ""]
+
+    def banner(self, w: Welcome) -> None:
+        for line in self.banner_lines(w):
+            self.write(line)
+
+    async def play_banner(self, w: Welcome) -> None:
+        """The welcome screen with motion: the box draws itself, then light sweeps the name."""
+        if not self.animate:
+            self.banner(w)
+            return
+        lines = self.banner_lines(w)
+        self.write(lines[0])
+        top = self._edge(self.g["tl"], self.g["tr"], self.width - 1)
+        self.out.write(" ")
+        for i in range(0, len(top), 6):  # the top edge draws itself in a few strokes
+            self.out.write("".join(top[i : i + 6]))
+            self.out.flush()
+            await self.beat(0.012)
+        self.out.write("\n")
+        for line in lines[2:]:
+            self.write(line)
+            await self.beat(0.035)
+        up = len(lines) - 2  # from the line after the banner back to the title row
+        for step in range(-3, len("Ragnarok") + 4):  # a highlight crosses the name
+            self.out.write(f"\x1b[{up}A\r{self.banner_lines(w, glow=step)[2]}\x1b[{up}B\r")
+            self.out.flush()
+            await self.beat(0.04)
 
     def box(self, title: str, lines: list[str], *, tint: int = SKY) -> None:
         """A small rounded box (used for the recovery code)."""
@@ -216,8 +383,14 @@ class Console:
             self.write(f" {self.paint(tint, g['v'])} {line}{pad}{self.paint(tint, g['v'])}")
         self.write(" " + self.paint(tint, g["bl"] + g["h"] * inner + g["br"]))
 
-    def prompt(self) -> str:
-        return f" {self.paint(SKY, self.g['prompt'], bold=True)} "
+    def prompt(self, label: str = "") -> str:
+        """A hairline (carrying `label` at its right end), then the input marker."""
+        n = self.width - 1
+        if label:
+            line = self.rule(n - len(label) - 4) + self.dim(f" {label} ") + self.rule(2)
+        else:
+            line = self.rule(n)
+        return f" {line}\n {self.paint(SKY, self.g['prompt'], bold=True)} "
 
     def assistant_marker(self, kind: str = "bot") -> str:
         if kind == "done":
@@ -229,15 +402,31 @@ class Console:
     def footer(self, tools: list[tuple[str, bool]], seconds: float) -> None:
         """A dim line under an answer: which tools ran, and how long it took."""
         g = self.g
-        parts = []
-        for name, allowed in tools:
-            parts.append(
-                f"{self.teal(g['tool'])} {self.teal(name)}"
-                if allowed
-                else self.bad(f"{g['no']} {name} blocked")
-            )
+        names = [
+            self.teal(name) if allowed else self.bad(f"{g['no']} {name} blocked")
+            for name, allowed in tools
+        ]
+        parts = [f"{self.dim(g['tool'])}  " + ", ".join(names)] if names else []
         parts.append(self.faint(f"{seconds:.1f}s"))
         self.write("   " + f" {self.dim(g['dot'])} ".join(parts))
+
+    def approval(self, name: str, args: dict, warning: str = "") -> str:
+        """Draw the 'allow this?' card; returns the prompt text for its last line."""
+        g = self.g
+        side = f"   {self.amber(g['v'])} "
+        room = self.width - 16
+        self.write(f"   {self.amber(g['tl'] + g['h'])} {self.bold('Permission needed')}")
+        self.write(side + self.teal(name))
+        for key, value in list(args.items())[:6]:
+            text = repr(value)
+            if len(text) > room:
+                text = text[: room - len(g["ellipsis"])] + g["ellipsis"]
+            self.write(side + self.dim(f"{key:<10}") + text)
+        if len(args) > 6:
+            self.write(side + self.faint(f"{g['ellipsis']} {len(args) - 6} more"))
+        for part in textwrap.wrap(warning, self.width - 6):
+            self.write(side + self.faint(part))
+        return f"   {self.amber(g['bl'] + g['h'])} Do you want to proceed? {self.dim('[y/N]')} "
 
     def notice(self, text: str) -> None:
         self.write(" " + self.faint(text))
@@ -249,7 +438,9 @@ class Console:
         self.write(" " + self.good(f"{self.g['ok']} {text}"))
 
     def section(self, title: str) -> None:
-        self.write(" " + self.bold(title))
+        """A bold title with a hairline running out to the right."""
+        tail = max(0, self.width - visible_len(title) - 3)
+        self.write(" " + self.bold(title) + " " + self.dim(self.g["h"] * tail))
 
     def help(self) -> None:
         rows = [
@@ -288,8 +479,25 @@ class Console:
 
     # ---- the "thinking" indicator ----------------------------------------------------------
 
-    def spinner(self, label: str = "thinking") -> Spinner:
+    def spinner(self, label: str = "Thinking") -> Spinner:
         return Spinner(self, label)
+
+    async def farewell(self, note: str) -> None:
+        """The last line of a session; the star closes while light passes over the words."""
+        self.write()
+        if not (self.animate and not self.ascii):
+            self.notice(note)
+            self.write()
+            return
+        stars = "✻✶✳✢·"
+        for i, star in enumerate(stars):
+            colour = self.ramp(i / (len(stars) - 1))
+            shimmer = self.shimmer(note, i * len(note) / (len(stars) - 1))
+            self.out.write(f"\r {self.paint(colour, star)} {shimmer}\x1b[K")
+            self.out.flush()
+            await self.beat(0.08)
+        self.out.write(f"\r {self.dim('·')} {self.faint(note)}\x1b[K\n\n")
+        self.out.flush()
 
 
 class Spinner:
@@ -309,10 +517,17 @@ class Spinner:
 
     async def _spin(self) -> None:
         frames = ASCII_FRAMES if self.c.ascii else FRAMES
+        text = self.label + self.c.g["ellipsis"]
+        began = time.monotonic()
         i = 0
         while True:
-            frame = self.c.violet(frames[i % len(frames)])
-            self.c.out.write(f"\r {frame} {self.c.faint(self.label)}\x1b[K")
+            sweep = abs((i % 50) / 25 - 1)  # 1 -> 0 -> 1: the colour glides along the gradient
+            star = frames[(i // 2) % len(frames)] if not self.c.ascii else frames[i % len(frames)]
+            frame = self.c.paint(self.c.ramp(sweep), star)
+            centre = (i * 0.7) % (len(text) + 10) - 5  # light passes over the words, then rests
+            waited = time.monotonic() - began
+            suffix = self.c.faint(f" ({waited:.0f}s)") if waited >= 1 else ""
+            self.c.out.write(f"\r {frame} {self.c.shimmer(text, centre)}{suffix}\x1b[K")
             self.c.out.flush()
             i += 1
             await asyncio.sleep(0.08)

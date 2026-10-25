@@ -159,10 +159,7 @@ class ChatApp:
         await self._pause_spinner()  # the animation would draw over the question
         tool = self.agent.tools.get(name)
         warning = (tool.approval_note if tool else "") or decision.reason
-        detail = ", ".join(f"{k}={v!r}" for k, v in args.items())
-        if warning:
-            self.c.write("   " + self.c.faint(warning))
-        prompt = f"   {self.c.amber('?')} allow {self.c.teal(name)} {self.c.faint(detail)} [y/N] "
+        prompt = self.c.approval(name, args, warning)
         try:
             answer = await asyncio.to_thread(self.approve_line or input, prompt)
         finally:
@@ -180,7 +177,7 @@ class ChatApp:
     async def _note(self, text: str) -> None:
         """A progress line from a long-running tool (each step of a screen task)."""
         await self._pause_spinner()
-        self.c.write("   " + self.c.teal(self.c.g["tool"]) + " " + self.c.faint(text))
+        self.c.write("   " + self.c.dim(self.c.g["tool"]) + "  " + self.c.faint(text))
         self._resume_spinner()
 
     # ---- the session -------------------------------------------------------------------------
@@ -189,7 +186,7 @@ class ChatApp:
         self._start_background_work()
         count = await asyncio.to_thread(self.rt.store.count)
         gpu = await gpu_status()
-        self.c.banner(Welcome(CHAT_MODEL, count, gpu, self.folder, first_run=count == 0))
+        await self.c.play_banner(Welcome(CHAT_MODEL, count, gpu, self.folder, first_run=count == 0))
         if self.mode.name != "ask":
             self.c.notice(f"Mode: {self.mode.name} - {SUMMARY[self.mode.name]}. /mode changes it.")
         self.learner.schedule()  # catch up on earlier conversations while the user reads
@@ -198,7 +195,9 @@ class ChatApp:
             while True:
                 try:
                     line = (
-                        await asyncio.to_thread(self.read_line or input, self.c.prompt())
+                        await asyncio.to_thread(
+                            self.read_line or input, self.c.prompt(f"{self.mode.name} mode")
+                        )
                     ).strip()
                 except (EOFError, KeyboardInterrupt):
                     self.c.write()
@@ -290,7 +289,7 @@ class ChatApp:
             self.c.write()
             self.c.section(f"Mode: {self.mode.name}")
             for name in MODES:
-                marker = self.c.good("*") if name == self.mode.name else " "
+                marker = self.c.good(self.c.g["live"]) if name == self.mode.name else " "
                 self.c.write(
                     f"   {marker} {self.c.sky(f'{name:<6}')} {self.c.faint(SUMMARY[name])}"
                 )
@@ -308,6 +307,4 @@ class ChatApp:
     async def _goodbye(self) -> None:
         pending = await asyncio.to_thread(self.rt.store.pending_events, 1)
         note = "I'll finish learning from this chat next time." if pending else "See you soon."
-        self.c.write()
-        self.c.notice(note)
-        self.c.write()
+        await self.c.farewell(note)

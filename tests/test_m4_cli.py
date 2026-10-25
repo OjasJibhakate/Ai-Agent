@@ -197,7 +197,7 @@ def test_chat_session_end_to_end(home, monkeypatch, capsys):
     passphrases(monkeypatch, PASSPHRASE)
     assert cli.main(["chat"]) == 0
     out = ANSI.sub("", capsys.readouterr().out)
-    assert "Welcome." in out and "Ragnarok" in out  # first run: nothing remembered yet
+    assert "Welcome to Ragnarok" in out  # first run: nothing remembered yet
     assert "Saved: Likes green tea [m:1]" in out  # the action's own sentence
     assert "memory_save" in out  # the footer names the tool
     assert "Nice to meet you" in out

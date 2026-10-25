@@ -532,3 +532,17 @@ Variety and follow-up robustness, `open_path` ("open the ppt you made"), latency
 - New: `open_path` (open a file or folder; never programs or scripts), file lookup by loose name ("deep learning" finds `Deep_learning`, "climate ppt" finds the deck; same-level duplicates are listed, not guessed), one shared rule (`skills/steps.py`) for when a tool may end the turn so "make a ppt and then open it" keeps going.
 - Triggers (FR4) started: schedule parser (`triggers/schedule.py`: "in 10 minutes", "tomorrow at 9am", "every weekday at 8", cron with a 5-minute floor), vault tables for triggers, fires and the Inbox (migration 0005), `TriggerStore`. **Not yet done:** engine, notifications, tools, chat/daemon wiring, tests for the triggers package.
 - 1025 tests pass; ruff clean.
+
+## 2026-10-26 - "make the CLI more colourful, unique, minimal, like Claude Code, with animations and transitions"
+
+### Built (D-039)
+- `ragnarok/ui.py`: 24-bit gradient palette with 256-colour fallback, rounded welcome box (`banner_lines`, `play_banner`), prompt hairline with the mode, new glyphs, tool-result footer, permission card, shimmering star spinner, closing-star `farewell`. `ragnarok/chat.py` wires them in.
+- Tests: **1047 pass** (was 1032), ruff clean. New tests cover truecolor detection and output, the gradient glow and shimmer, hairline widths, the permission card, the animated welcome (cursor moves back to the name and ends on the same screen), animation off by environment variable and for pipes, and the farewell.
+
+### Found
+- The first-run hint line was wider than an 80-column terminal; it is now a short list.
+- The banner glyph clashed with a spinner frame in an existing test, so the banner uses its own glyph.
+
+### Not done / not verified
+- Not yet looked at in the owner's real terminal; timings of the animation (about 0.7 s at start) are by design, not measured on screen.
+- `/clear` and mode changes have no transition yet.

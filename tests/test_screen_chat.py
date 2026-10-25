@@ -90,8 +90,10 @@ async def test_an_approved_task_shows_the_warning_the_steps_and_the_result(tmp_p
     )
     await app.run()
     shown = text(out)
-    assert "Hold Esc or move the mouse to stop me" in shown  # the warning comes with the question
-    assert "allow use_computer" in shown and "[y/N]" in shown
+    squeezed = re.sub(r"\s*│\s*|\s+", " ", shown)  # the card wraps the warning over lines
+    assert "Hold Esc or move the mouse to stop me" in squeezed  # it comes with the question
+    assert "Permission needed" in shown and "use_computer" in shown
+    assert "Do you want to proceed? [y/N]" in shown
     steps = re.findall(r"step \d+: .*", shown)
     assert steps == [
         "step 1: press win",
