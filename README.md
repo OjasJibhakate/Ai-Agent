@@ -58,8 +58,11 @@ Times are commit times (IST). Details and numbers for each line are in the work 
 | 2026-10-25 18:00 | **M4** Always-on profile block, `memory_search` / `memory_save` tools, permission check, chat loop with log-before-act | `ba97b86` |
 | 2026-10-25 18:05 | Fixed two silent data-loss bugs the real-model demo found; end-to-end demo passes 4/4 (D-029) | `f78677e` |
 | 2026-10-25 18:07 | Terminal CLI: `init`, `chat`, `memory ...`, `ingest`, `doctor` | `c14915b` |
+| 2026-10-25 18:19 | First real run on the owner's laptop found the agent could not "open steam"; added the `open_app` skill (Start menu apps, shells refused), an honesty rule, and passphrase retries | `b61a218` |
+| 2026-10-25 18:33 | Colour terminal screen (welcome box, spinner, footer), background learning, and faster tool turns: remembering a fact 3.9 s to 1.6 s, opening an app 2.2 s to 1.1 s | `ec7a795` |
 
-127 tests pass and `ruff` is clean as of the last commit.
+
+193 tests pass and `ruff` is clean as of the last commit.
 
 ### Remaining
 
