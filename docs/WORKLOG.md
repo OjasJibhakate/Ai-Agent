@@ -621,3 +621,9 @@ Variety and follow-up robustness, `open_path` ("open the ppt you made"), latency
 - Looked at on the real screen at 6x: the running cat shows the new face and stands on the taskbar edge.
 - Tests: **1504 pass, 3 skipped**, ruff clean (new: art checks for the eyes, blush, tilt and wag; behaviour checks for the tilt and the wag; a test that a lone cat never tilts).
 - Not verified: the owner has not yet seen the new face on their own screen or used the automatic unlock with their real vault.
+
+### 2026-10-26 (night) - the chat window made smaller again (300 x 360)
+- Owner: "make the chatbox more small". 340 x 420 became 300 x 360; text wraps follow.
+- Found by looking at it (new helper `scripts/preview_chat.py`, which fills the real window with a sample chat, a permission card and a plan card): at that width the header status ("model · GPU · N memories") was cut off at both ends and the close button was pushed out of the window, so the window could not be closed with the mouse. Fixed by packing the close button first and shortening the status to `model · GPU`; the memory count moved into the greeting. Cards and their buttons fit.
+- Tests: **1505 pass, 4 skipped**, ruff clean. New: the size, the close button and status staying inside the window, and the greeting with the memory count. One skip is a test that sometimes cannot open a Tk window (`test_gui_scale`), not related to this change.
+- Not verified: how it feels in daily use with a long conversation (the transcript scrolls; only short conversations were looked at).

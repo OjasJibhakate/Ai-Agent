@@ -13,8 +13,8 @@ from typing import Any
 from ragnarok.gui import theme as t
 from ragnarok.gui.bridge import Bridge
 
-WIDTH, HEIGHT = 340, 420
-WRAP = WIDTH - 96  # how wide a bubble's text may get
+WIDTH, HEIGHT = 300, 360
+WRAP = WIDTH - 90  # how wide a bubble's text may get
 DOTS = ["Thinking", "Thinking.", "Thinking..", "Thinking..."]
 QUIT_WORDS = ("/quit", "/exit", "/q")
 
@@ -54,9 +54,9 @@ class ChatWindow:
         )
         tk.Label(header, text="Ragnarok", fg=t.TEXT, bg=t.PANEL, font=t.TITLE).pack(side="left")
         self.status = tk.Label(header, text="", fg=t.DIM, bg=t.PANEL, font=t.SMALL)
-        self.status.pack(side="left", padx=10)
         close = tk.Label(header, text="✕", fg=t.DIM, bg=t.PANEL, font=t.UI, cursor="hand2")
-        close.pack(side="right", padx=12)
+        close.pack(side="right", padx=12)  # packed first, so a long status can never push it out
+        self.status.pack(side="left", padx=8)
         close.bind("<Button-1>", lambda _e: self.hide())
         close.bind("<Enter>", lambda _e: close.config(fg=t.CORAL))
         close.bind("<Leave>", lambda _e: close.config(fg=t.DIM))
@@ -237,12 +237,15 @@ class ChatWindow:
             self._to_bottom()
 
     def on_welcome(self, model: str, memories: int, gpu: str, first_run: bool) -> None:
-        self.status.config(text=f"{model} · {gpu} · {memories} memories")
+        self.status.config(text=f"{model} · {gpu}")  # short: the window is narrow
         if first_run:
             self.bubble(
                 "Hi! I'm Ragnarok. Everything runs on this laptop.\n\nTry: “remember that I prefer "
                 "meetings after 2pm”, “open steam”, or “make slides from my notes folder”."
             )
+        elif memories:
+            things = "1 thing" if memories == 1 else f"{memories} things"
+            self.bubble(f"Welcome back. I remember {things} about you. What can I do for you?")
         else:
             self.bubble("Welcome back. What can I do for you?")
 

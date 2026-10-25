@@ -5,7 +5,7 @@ import tkinter as tk
 import pytest
 
 from ragnarok.gui.bridge import Bridge
-from ragnarok.gui.chat import WIDTH, ChatWindow
+from ragnarok.gui.chat import HEIGHT, WIDTH, ChatWindow
 
 
 @pytest.fixture
@@ -174,3 +174,36 @@ def test_the_window_opens_inside_the_screen_above_the_cat_even_at_the_edges(wind
     assert chat.top.winfo_y() >= 8
     chat.hide()
     assert chat.closed_log[-1] is True and not chat.visible
+
+
+# ---- a small window -----------------------------------------------------------------------------
+
+
+def test_the_window_is_small_and_the_close_button_and_status_still_fit_inside_it(window):
+    chat, _bridge, root = window
+    assert (WIDTH, HEIGHT) == (300, 360)
+    welcome = {"model": "qwen3.5:4b", "memories": 1234, "gpu": "100% GPU", "first_run": False}
+    chat.handle("welcome", welcome)
+    chat.top.geometry(f"{WIDTH}x{HEIGHT}+40+40")
+    chat.top.deiconify()
+    root.update()
+    close = next(label for label in labels(chat.top) if label.cget("text") == "✕")
+    right_edge = chat.top.winfo_rootx() + WIDTH
+    assert close.winfo_ismapped() and close.winfo_rootx() + close.winfo_width() <= right_edge
+    assert chat.status.winfo_width() >= chat.status.winfo_reqwidth()  # the status is not cut off
+    assert chat.status.winfo_rootx() + chat.status.winfo_width() <= close.winfo_rootx()
+
+
+def test_a_returning_user_is_told_how_much_is_remembered_only_when_it_is_something(window):
+    chat, _bridge, _root = window
+    base = {"model": "m", "gpu": "100% GPU", "first_run": False}
+    chat.handle("welcome", {**base, "memories": 12})
+    chat.handle("welcome", {**base, "memories": 1})
+    chat.handle("welcome", {**base, "memories": 0})
+    shown = texts(chat)
+    assert "Welcome back. I remember 12 things about you. What can I do for you?" in shown
+    assert "Welcome back. I remember 1 thing about you. What can I do for you?" in shown
+    assert "Welcome back. What can I do for you?" in shown
+    assert (
+        chat.status.cget("text") == "m · 100% GPU"
+    )  # the count is in the greeting, not the header
