@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 from collections.abc import Awaitable, Callable
 from typing import Protocol
 
@@ -23,9 +24,10 @@ from ragnarok.memory.store import MemoryStore
 from ragnarok.policy.permissions import Decision
 from ragnarok.runtime.gateway import CHAT_MODEL, OLLAMA_URL, Gateway
 from ragnarok.runtime.loop import Agent, Session
-from ragnarok.runtime.tools import Tool, memory_tools
+from ragnarok.runtime.tools import PROGRESS, Tool, memory_tools
 from ragnarok.skills.apps import WindowsApps, app_tools
 from ragnarok.skills.files import file_tools
+from ragnarok.skills.screen.tools import screen_tools
 from ragnarok.skills.web import web_tools
 from ragnarok.ui import Console, Welcome
 
@@ -115,6 +117,7 @@ class ChatApp:
                 + app_tools(self._catalog)
                 + file_tools()
                 + web_tools()
+                + ([] if os.environ.get("RAGNAROK_NO_SCREEN") == "1" else screen_tools(rt.gateway))
             )
         self.agent = Agent(
             rt.store, rt.svc, rt.ingestor, rt.gateway, approve=self._approve, tools=tools
@@ -126,14 +129,37 @@ class ChatApp:
             maintenance,
         )
         self._background: list[asyncio.Task] = []
+        self._spinner = None  # the "thinking" animation of the turn in progress
 
     # ---- approvals ---------------------------------------------------------------------------
 
     async def _approve(self, name: str, args: dict, decision: Decision) -> bool:
+        await self._pause_spinner()  # the animation would draw over the question
+        tool = self.agent.tools.get(name)
+        warning = (tool.approval_note if tool else "") or decision.reason
         detail = ", ".join(f"{k}={v!r}" for k, v in args.items())
+        if warning:
+            self.c.write("   " + self.c.faint(warning))
         prompt = f"   {self.c.amber('?')} allow {self.c.teal(name)} {self.c.faint(detail)} [y/N] "
-        answer = await asyncio.to_thread(self.approve_line or input, prompt)
+        try:
+            answer = await asyncio.to_thread(self.approve_line or input, prompt)
+        finally:
+            self._resume_spinner()
         return answer.strip().lower() in ("y", "yes")
+
+    async def _pause_spinner(self) -> None:
+        if self._spinner is not None:
+            await self._spinner.pause()
+
+    def _resume_spinner(self) -> None:
+        if self._spinner is not None:
+            self._spinner.resume()
+
+    async def _note(self, text: str) -> None:
+        """A progress line from a long-running tool (each step of a screen task)."""
+        await self._pause_spinner()
+        self.c.write("   " + self.c.teal(self.c.g["tool"]) + " " + self.c.faint(text))
+        self._resume_spinner()
 
     # ---- the session -------------------------------------------------------------------------
 
@@ -180,8 +206,9 @@ class ChatApp:
 
     async def _turn(self, text: str) -> None:
         await self.learner.cancel()  # you first: stop any background learning
-        spinner = self.c.spinner()
+        spinner = self._spinner = self.c.spinner()
         spinner.start()
+        PROGRESS.set(self._note)
 
         async def show(chunk: str) -> None:
             if spinner.active:
@@ -190,10 +217,15 @@ class ChatApp:
             self.c.out.write(chunk.replace("\n", "\n   "))
             self.c.out.flush()
 
-        result = await self.agent.turn(self.session, text, on_delta=show)
+        try:
+            result = await self.agent.turn(self.session, text, on_delta=show)
+        finally:
+            if spinner.active and spinner._task is not None:
+                await spinner.pause()  # never leave an animation running if the turn failed
         if spinner.active:  # nothing was streamed (an error, or an empty reply)
             await spinner.stop("warn" if result.stopped else "bot")
             self.c.out.write(result.text or self.c.faint("(no reply)"))
+        self._spinner = None
         self.c.write()
         self.c.footer([(t.tool, t.allowed) for t in result.trace], result.total_ms / 1000)
         self.c.write()

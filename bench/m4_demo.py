@@ -85,7 +85,9 @@ async def main() -> None:
             clock.now = START + timedelta(days=1, hours=2)
             vault, store, ingestor, agent = await open_agent(path, key, gw, clock)
             b = Session()
-            await say(agent, b, "When should we schedule the team retro?", r"(14:00|2 ?pm|2:00|after 2)")
+            await say(
+                agent, b, "When should we schedule the team retro?", r"(14:00|2 ?pm|2:00|after 2)"
+            )
             await say(agent, b, "Who is my manager?", r"Ravi")
             await say(agent, b, "Actually, I prefer meetings after 3pm from now on.")
             report = await ingestor.ingest_pending()
@@ -95,14 +97,18 @@ async def main() -> None:
             print("\n===== day 3, session C =====")
             clock.now = START + timedelta(days=2, hours=1)
             vault, store, ingestor, agent = await open_agent(path, key, gw, clock)
-            await say(agent, Session(), "What time do I prefer for meetings?", r"(15:00|3 ?pm|3:00)")
+            await say(
+                agent, Session(), "What time do I prefer for meetings?", r"(15:00|3 ?pm|3:00)"
+            )
             active = [m.content for m in store.list_memories()]
             history = vault.query("SELECT content, status FROM memories ORDER BY id")
             print("\nactive memories:", active)
             print("all (with status):", history)
             stale_active = [c for c in active if re.search(r"2 ?pm|14:00", c)]
             checks.append(not stale_active)
-            print(f"old 2pm preference still active: {bool(stale_active)} -> {'FAIL' if stale_active else 'PASS'}")
+            print(
+                f"old 2pm preference still active: {bool(stale_active)} -> {'FAIL' if stale_active else 'PASS'}"
+            )
             vault.close()
     finally:
         await gw.aclose()

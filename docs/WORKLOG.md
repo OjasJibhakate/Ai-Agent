@@ -456,3 +456,29 @@ Use it for a few days (`memory stats` shows what is happening); then a held-out 
 - On this laptop the default browser is Edge, so "chrome" must start Chrome from its registered path; Firefox is not installed (the tool says so and falls back to the default).
 - Tests: **336 pass**. 53 new tests cover URL building for every known site, hostile addresses, the typed-by-user rule, browser fallback, the click/play limitation, and the exact request as a two-step turn.
 - Not done: correcting typos in search words (YouTube does its own "did you mean"); reading page contents; opening a specific video.
+
+## 2026-10-25 (late night) - "make it read the screen and do the task that i give him"
+
+### Built (D-035)
+- `ragnarok/skills/screen/`: `capture.py` (GDI capture, area-average downscale, in-memory PNG), `winapi.py` (foreground window, own-terminal detection, Esc state, minimise/restore), `input.py` (`SendInput`, key allow-list, secret/card text refused, blocked windows), `task.py` (the look-decide-check-log-act loop), `tools.py` (`read_screen`, `use_computer`).
+- The terminal asks before `use_computer` runs, shows the safety note, and prints each step as it happens. `RAGNAROK_NO_SCREEN=1` turns the screen tools off.
+- Tests: **550 pass**, `ruff` clean. About 215 are new and run on a fake desktop (no real screen, mouse or windows): capture and PNG, key and text rules, the loop's stop conditions, permission checks on every action, log-before-act order, terminal restore even when the task crashes, and the chat approval flow.
+
+### Measured (real model)
+- Pointing: the model answers on a 0 to 1000 scale whatever the prompt says. At 1280x720, 48/48 points inside the target, median miss 5 px of 1920, about 1.3 s per look; 1920 wide costs 2.6 s for no gain; 960 wide 1.0 s (47/48). Small print read correctly 6/6 at 1920, 1280 and 960. Vision adds about 48 MiB of VRAM. (Synthetic pages I drew, not the owner's screen.)
+- **Live end-to-end (`bench/screen_eval.py`, real model + real capture + real mouse on a small test window, 3 trials x 5 tasks): 5/15.** form 2/3, buttons 1/3, search 1/3, scroll 1/3, list 0/3. Earlier runs of the same harness: 2/5 (first), 3/10 and 2/10 (after the first fixes, before `fill` and the screen-only check), 6/10 (2 trials, after them). The spread between runs is large; 15 trials is a small sample.
+- 1 of 15 runs said "done" while the check failed. In the 10-run session two did (one an empty Name field that the completion check accepted, one a truthful claim but with a repeated click).
+
+### Found by the live test (all fixed, each with a test)
+- Loose action schema produced clicks with no `y`; now a per-action schema (measured: every reply has its fields, about 1.9 s per look).
+- Scroll sign inverted by the model; now `direction`. It also typed without clicking the field; now `fill`.
+- Change detection was blind to typed text (thumbnail average); now counts changed pixels. The test clock hid this: its fake time advanced on the Esc watcher's polls, so a real thread wait burned the whole 150 s budget; the watcher now has its own `poll` hook.
+- The completion check parroted the step list; it now sees the screen only. Repeated total counts became "in a row", scrolling/arrow keys/waiting are exempt while the screen changes, and wanting to repeat an action first asks "is it already done?".
+- A scroll moved the mouse and was read as the user taking over; `wait` also made Esc deaf for its duration (the watcher ignores Esc while we inject input); both fixed.
+- Safety gap found by a test: after a declined "Submit order" click, pressing Enter bypassed the confirmation. The last target is now remembered even when refused.
+
+### Not done / not verified
+- **Acting is unreliable (33% on the test window).** Dense lists are the worst case: the model is 1 to 2 rows off. Ideas, not built: a zoom step (second look at a crop before clicking), Windows UI Automation for apps that expose controls, a larger vision model if one fits in 6 GB.
+- Not tried on real applications (Notepad, a browser page, Settings) or on a second monitor/scaling setup; I did not look at the owner's real screen while building this. The test window was opened briefly on the desktop during live runs.
+- `read_screen` has not been run on a real desktop yet by me; it should be tried with `look at my screen and tell me what is open`.
+- No answer-quality test of the model's long descriptions of busy screens.

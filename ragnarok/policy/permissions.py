@@ -56,6 +56,16 @@ PROFILES: dict[str, Profile] = {
         frozenset(),
         "ask",
     ),
+    # Used only inside a screen task the user has just approved (the `use_computer` tool): it
+    # allows exactly the screen actions and nothing else. Every action is still checked against it.
+    "screen": Profile(
+        "screen",
+        "full-access",
+        frozenset({"screen_click", "screen_type", "screen_key", "screen_scroll", "screen_wait"}),
+        frozenset(),
+        frozenset(),
+        "ask",
+    ),
 }
 
 

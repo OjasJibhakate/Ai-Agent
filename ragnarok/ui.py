@@ -316,6 +316,22 @@ class Spinner:
             i += 1
             await asyncio.sleep(0.08)
 
+    async def pause(self) -> None:
+        """Stop animating and clear the line, so something else can be printed (still active)."""
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+            self.c.out.write("\r\x1b[K")
+            self.c.out.flush()
+
+    def resume(self) -> None:
+        if self.active and self._task is None and self.c.tty and self.c.color:
+            self._task = asyncio.create_task(self._spin())
+
     async def stop(self, marker: str = "bot") -> None:
         """Remove the indicator and print the assistant marker in its place."""
         if self._task is not None:

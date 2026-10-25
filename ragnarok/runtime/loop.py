@@ -27,8 +27,10 @@ from ragnarok.policy import permissions
 from ragnarok.runtime.context import build_messages
 from ragnarok.runtime.gateway import ChatResult, GatewayError
 from ragnarok.runtime.tools import (
+    CONFIRM,
     CURRENT_EVENT,
     CURRENT_TEXT,
+    EVENT_LOG,
     MAX_RESULT_CHARS,
     Tool,
     ToolResult,
@@ -115,6 +117,8 @@ class Agent:
         user_event = await self._log(session, "user_message", text)
         CURRENT_EVENT.set(user_event)
         CURRENT_TEXT.set(text)
+        EVENT_LOG.set(lambda kind, payload: self._log(session, kind, payload))  # log before acting
+        CONFIRM.set(self._confirm)
 
         # hot path: retrieval with no model call besides the query embedding
         t = time.perf_counter()
@@ -232,6 +236,15 @@ class Agent:
         await self._log(session, "memory_tool_result", f"{name}: {logged}")
         result.trace.append(ToolTrace(name, clean, decision.rule, True, output))
         return output, final
+
+    async def _confirm(self, description: str) -> bool:
+        """Ask the user about one step of a longer task that looks hard to undo."""
+        if self.approve is None:
+            return False
+        decision = permissions.Decision(
+            False, True, "confirm:irreversible", "this step looks hard to undo"
+        )
+        return bool(await self.approve("screen_action", {"action": description}, decision))
 
     async def _log(self, session: Session, kind: str, payload: str) -> int | None:
         # tool events are never merged by the dedupe window: each call is its own record

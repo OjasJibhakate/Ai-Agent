@@ -72,10 +72,15 @@ async def main() -> None:
             print(f"{len(groups)} groups planned, {small} too small\n")
             for g in groups:
                 ids = {m.id for m in g.members}
-                listing = "\n".join(f"[m:{m.id} {m.created_at[:10]}] {m.content}" for m in g.members)
+                listing = "\n".join(
+                    f"[m:{m.id} {m.created_at[:10]}] {m.content}" for m in g.members
+                )
                 task = cons._task.replace("{memories}", listing)
                 data = await cons.llm.json(
-                    [{"role": "system", "content": cons._system}, {"role": "user", "content": task}],
+                    [
+                        {"role": "system", "content": cons._system},
+                        {"role": "user", "content": task},
+                    ],
                     SUMMARY_SCHEMA,
                 )
                 source = " ".join(m.content for m in g.members if m.id in set(data["cited_ids"]))
@@ -85,7 +90,9 @@ async def main() -> None:
                      "of": len(ids), "rejected": reason, "novel": novel_terms(data["summary"], source)}
                 )  # fmt: skip
                 verdict = "ACCEPT" if reason is None else f"REJECT ({reason}: {rows[-1]['novel']})"
-                print(f"{verdict}\n  {data['summary']}\n  cites {rows[-1]['cited']} of {rows[-1]['of']}\n")
+                print(
+                    f"{verdict}\n  {data['summary']}\n  cites {rows[-1]['cited']} of {rows[-1]['of']}\n"
+                )
             vault.close()
     finally:
         await gw.aclose()

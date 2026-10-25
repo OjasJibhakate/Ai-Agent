@@ -70,14 +70,21 @@ async def main(rounds: int) -> None:
     finally:
         await gw.aclose()
 
-    print(f"\n{'turn':20s} {'total ms':>9s} {'first tok':>10s} {'model calls':>12s} {'out tokens':>11s}")
+    print(
+        f"\n{'turn':20s} {'total ms':>9s} {'first tok':>10s} {'model calls':>12s} {'out tokens':>11s}"
+    )
     summary = {}
     for name, rows in results.items():
         tot = statistics.median(x["total_ms"] for x in rows)
         ft = statistics.median(x["first_token_ms"] for x in rows)
         steps = statistics.median(x["steps"] for x in rows)
         toks = statistics.median(x["tokens"] for x in rows)
-        summary[name] = {"total_ms": tot, "first_token_ms": ft, "model_calls": steps, "tokens": toks}
+        summary[name] = {
+            "total_ms": tot,
+            "first_token_ms": ft,
+            "model_calls": steps,
+            "tokens": toks,
+        }
         print(f"{name:20s} {tot:9.0f} {ft:10.0f} {steps:12.0f} {toks:11.0f}")
     out = Path("bench/results") / f"chat_latency_{datetime.now(UTC):%Y-%m-%d_%H%M}.json"
     out.parent.mkdir(parents=True, exist_ok=True)

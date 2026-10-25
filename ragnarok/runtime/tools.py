@@ -19,6 +19,13 @@ from ragnarok.policy.permissions import Risk
 CURRENT_EVENT: ContextVar[int | None] = ContextVar("current_event", default=None)
 # The user message being answered; lets a tool tell a plain lookup from a bigger request.
 CURRENT_TEXT: ContextVar[str] = ContextVar("current_text", default="")
+# Set by the loop for long-running tools: a progress line for the screen, a way to write an event
+# to the log BEFORE acting, and a way to ask the user to confirm one risky step.
+PROGRESS: ContextVar[Callable[[str], Awaitable[None]] | None] = ContextVar("progress", default=None)
+EVENT_LOG: ContextVar[Callable[[str, str], Awaitable[Any]] | None] = ContextVar(
+    "event_log", default=None
+)
+CONFIRM: ContextVar[Callable[[str], Awaitable[bool]] | None] = ContextVar("confirm", default=None)
 MAX_RESULT_CHARS = 4000  # about 1,000 tokens; longer output is cut with a note
 
 
@@ -70,6 +77,7 @@ class Tool:
     handler: Callable[[Any], Awaitable[str | ToolResult]]
     fs: dict[str, list[str]] = field(default_factory=dict)
     network: list[str] = field(default_factory=list)
+    approval_note: str = ""  # shown with the approval prompt, for tools that need a warning
 
     def spec(self) -> dict[str, Any]:
         """The tool in Ollama's function-calling format."""
