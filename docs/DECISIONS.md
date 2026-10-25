@@ -255,3 +255,31 @@ Format: context → decision → alternatives → consequences → revisit if.
     This is a heuristic; the model labels nearly every dated item `episodic`, so memory type can't be used for it.
   - If the model is down, events stay pending and are retried; assistant-only batches never reach the model.
 - **Consequences:** More superseded rows from reworded facts (cheap, and history is kept). The pipeline's safety no longer depends on prompt quality.
+
+### D-028 — The chat loop, tools, and permission check (M4)
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Decision:**
+  - The agent is a plain loop (`ragnarok/runtime/loop.py`): log the user message, retrieve memory (no model call besides the query embedding), build the prompt,
+    let the model call tools until it answers. Limits: 6 model calls per turn; the same call with the same arguments three times stops the turn.
+  - Prompt order for cache reuse: system prefix + chat rules + `<profile>` block (changes only when memory changes) | history | the retrieved
+    `<memory_context>` in the last user message only. Memories are always delimited as data, and the system prompt says never to follow instructions inside them.
+  - Two tools for now: `memory_search` (R0) and `memory_save` (R1, idempotent). Each declares schema, risk, idempotency, timeout, sandbox, fs and network.
+    Arguments are validated with pydantic; errors go back to the model as text.
+  - Every call goes through `policy/permissions.check` (deny, ask, allow, then the default by risk). Profiles are code for now (`interactive`, `background`); there is no YAML file yet.
+  - A tool call is written to the event log **before** it runs. Tool traffic uses event kinds that extraction never reads, so the agent can't learn from its own search results.
+  - `memory_save` records the user's message as the memory's source, so extraction at session end recognises the same assertion and reinforces it instead of re-versioning it.
+  - The CLI is `argparse` (no Typer dependency yet): `init`, `chat`, `memory ...`, `ingest`, `doctor`. Models are warmed once at start. The data folder must not be inside OneDrive.
+- **Consequences:** `rag chat` works end to end on the real models. Background profile (`ask` for everything with a side effect) exists, but nothing waits in an Inbox yet.
+
+### D-029 — Ingestion must never lose a fact (found by the real-model demo)
+- **Date:** 2026-10-25 · **Status:** accepted (extends D-027)
+- **Context:** Running the full flow on the real models found two silent data-loss paths that the scripted tests had not covered:
+  1. The decision step answered NOOP for "my manager is Ravi" against an unrelated meeting preference, so the fact was never stored.
+  2. "prefers meetings after 3pm" scored cosine 0.98 against "after 2pm", so the near-duplicate shortcut swallowed the change.
+- **Measured (nomic-embed-text, `search_document:` on both sides):** reworded same fact 0.885-0.990; changed value 0.627-0.980; different fact 0.525-0.821.
+  The ranges overlap, so no similarity threshold can tell "changed" from "different".
+- **Decision:**
+  - A near-duplicate is dropped only if the new statement also adds no words the stored one lacks.
+  - A NOOP/UPDATE whose target doesn't contain the new statement becomes SUPERSEDE if cosine >= 0.9 (a reword or change; the old version stays in history), otherwise ADD (keep both).
+  - Rule of thumb: when unsure, keep more, never less. Duplicates and extra versions are cheap; a lost fact is not.
+- **Known risk:** the model's explicit SUPERSEDE is trusted. A wrong one hides a fact in the history (not deleted). There is no "undo supersede" command yet.

@@ -338,3 +338,29 @@ case; a prompt rule fixed the model, and the code guard (D-027) now protects aga
 
 ### Next
 M4: always-on profile block, `memory_search` / `memory_save` tools behind a permission check, a chat loop with log-before-act, and a CLI.
+
+## 2026-10-25 (night) - M4: profile, tools, chat loop, CLI, and what the real models exposed
+
+### Done
+- `memory/profile.py` (always-on block, 400-token budget, rebuilt only when memory changes), `runtime/context.py` (stable prefix, memory in the last message only),
+  `runtime/tools.py` (`memory_search`, `memory_save`), `policy/permissions.py`, `runtime/loop.py` (log-before-act, validation, loop guard, step cap),
+  `cli.py` (`init`, `chat`, `memory`, `ingest`, `doctor`). Decisions: D-028, D-029.
+- Tests: **127 pass**. `test_m4_agent.py` covers the acceptance case (tell it a fact, kill the process, come back the next day: it is in the first prompt and the
+  prefix is identical on the next turn), permissions, invalid/unknown tools, denied and approved writes, loop guard, tool and model failures, and that tool
+  traffic is never mined. `test_m4_cli.py` covers init, wrong passphrase, recovery code, the OneDrive guard, memory commands, and a scripted chat session.
+- `rag doctor` on this laptop: Ollama on loopback 0.40.11, cloud disabled (from the server log), both models installed, both `100% GPU`.
+  (The keystore is not created yet: `init` needs the owner's passphrase, so I did not run it.)
+
+### Real-model end-to-end demo (`bench/m4_demo.py`, qwen3.5:4b + nomic-embed-text, throwaway vault, fake clock)
+Three sessions: day 1 tell it a preference and a manager; day 2 after a restart ask about them, then change the preference; day 3 ask again.
+- **Run 1: 3/4 checks. Found a data-loss bug.** "My manager is Ravi..." was saved by the tool but the decision step answered NOOP against the meeting preference,
+  so nothing was stored; the assistant still said "I've got that down", and "Who is my manager?" failed the next day.
+- **Run 2 (after fixing that): 2/4.** The change "after 3pm" had cosine 0.98 against "after 2pm" and was swallowed by the near-duplicate shortcut, so the day-3 answer was the old
+  preference. Both bugs are D-029; measured cosines are in that entry.
+- **Run 3 (final): 4/4.** The preference change and the manager both survive restarts; the 2pm version is `superseded`, the 3pm one is active, and the answer on day 3 is "after 3 PM".
+- Latency per turn on this laptop (RTX 4050): retrieval 55-77 ms, first token 190-530 ms, whole turn 0.7-4.4 s (tool turns include a second model call).
+- Caveats: a single scripted scenario, run three times, with the same model that I tuned the prompts on. It shows the plumbing and the safety rules work; it is not a measure of recall in daily use.
+  The assistant's wording after a save is sometimes loose (it paraphrases); the stored facts are what matter.
+
+### Next
+README commands, then M5 (consolidation, forgetting, undo supersede, `memory pin`), a held-out eval set, and the first-run flow on the owner's laptop.
