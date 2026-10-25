@@ -182,3 +182,13 @@ Format: context → decision → alternatives → consequences → revisit if.
 - **Decision:** `scripts/start_ollama.ps1` loads the variables, restarts `ollama serve` with its log in `%LOCALAPPDATA%\Ragnarok\logs`, and prints the applied
   settings from the server's own "server config" line. `rag doctor` (later) will do the same check.
 - **Consequences:** We can show evidence that local-only mode is on (`Ollama cloud disabled: true`) instead of assuming it.
+
+### D-022 — The vault takes a raw key; key wrapping is a separate, later layer
+- **Date:** 2026-10-25 · **Status:** accepted (refines D-006)
+- **Context:** M1 needs an encrypted file now. Passphrase wrapping (Argon2id + AES-GCM), the recovery code, and DPAPI need new
+  dependencies (`argon2-cffi`, `cryptography`, `pywin32`), and the project rules say to ask before adding dependencies or touching key handling.
+- **Decision:** `Vault.open(path, key)` accepts exactly 32 raw bytes, applies the key with `PRAGMA key = "x'<hex>'"`, and never logs or stores it.
+  Schema migrations are numbered SQL files in `ragnarok/memory/migrations/`, applied in one transaction each and tracked in `PRAGMA user_version`.
+  A file with a newer version than the code is refused.
+- **Consequences:** Tests use random keys. Key management (D-006) is added later without changing the vault API; until then no real user key exists.
+- **Revisit if:** the team approves the key-wrapping dependencies.

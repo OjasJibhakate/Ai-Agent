@@ -181,3 +181,28 @@ D-020 (store the Turbovec index as bytes inside the vault) and D-021 (start Olla
 2. Write `bench/llm_bench.py` and `bench/embed_bench.py`: embedding latency, vector dimension (expect 768), chat tok/s,
    first-token latency, and whether `think: false` is honored. Record the numbers here.
 3. Then M1: the encrypted vault, schema and migrations.
+
+## 2026-10-25 (night) - M1: encrypted vault, schema, migrations
+
+### Done
+- `ragnarok/memory/vault.py`: opens SQLCipher with a raw 32-byte key, sets `journal_mode=WAL`, `synchronous=FULL`, `temp_store=MEMORY`,
+  `secure_delete=ON`, `foreign_keys=ON`, runs `quick_check`, applies migrations, and provides `transaction()` (rollback on any error).
+  See D-022.
+- `ragnarok/memory/migrations/0001_initial.sql`: the schema from `docs/MEMORY.md` section 3.1 (events, memories, provenance, links,
+  entities, tags, embeddings, external-content FTS5 with sync triggers), plus `index_outbox`, `index_blobs` (D-020) and a content-free `audit_log`.
+  Child tables cascade on delete, so the M5 hard delete is one `DELETE`.
+- `tests/test_m1_vault.py` (16 cases): reopen persistence, pragmas, header is not `SQLite format 3`, secret string absent from the
+  WAL while open and from the main file after checkpoint, wrong/missing/short keys fail, migrations run once, newer schema refused,
+  failed migration rolls back, transaction rollback, FTS follows insert/update/delete, CHECK constraints, cascade delete.
+- Full suite: 26 passed; `ruff check` clean.
+- Added `pythonpath = ["."]` to the pytest config so tests can import `ragnarok` (config only, no new dependency).
+
+### Models
+- `nomic-embed-text` pulled. `qwen3.5:4b` still downloading. My first background pull died at 43% when its shell exited;
+  relaunched detached (Ollama resumes partial layers).
+
+### Next
+1. Finish the `qwen3.5:4b` pull; check `ollama ps` shows `100% GPU`.
+2. `bench/embed_bench.py` (dimension, latency) and `bench/llm_bench.py` (tok/s, first token, `think: false`).
+3. M2: `remember` / `recall` with FTS5 + Turbovec + RRF + rerank, with the restart test.
+4. Ask the team before adding key-wrapping dependencies (D-022).
