@@ -163,3 +163,22 @@ Format: context → decision → alternatives → consequences → revisit if.
 - **Alternatives:** Mem0 (good extraction logic but its own unencrypted stores; we borrow its ADD/UPDATE/SUPERSEDE/NOOP idea),
   Letta (a full agent server, too heavy), Graphiti/Zep (needs Neo4j, too heavy), basic-memory (plaintext markdown files).
 - **Revisit if:** Turbovec recall@10 against exact search is < 0.95 at the chosen bit width, or the source shows the API doesn't fit.
+
+### D-020 — Store the Turbovec index inside the vault as bytes
+- **Date:** 2026-10-25 · **Status:** accepted (refines D-019)
+- **Context:** M0 found that `IdMapIndex.to_bytes()` / `from_bytes()` serialize the whole index in memory, byte-identical to the `.tvim` file.
+  D-019 said the index would be RAM-only and rebuilt at startup.
+- **Decision:**
+  - Persist the index as a BLOB in the encrypted vault (checkpointed after batches of changes), so a restart loads it instead of rebuilding.
+  - The `embeddings` table remains the ground truth. If the blob is missing, corrupt, or its count doesn't match the active memories, rebuild from `embeddings`.
+  - No `.tvim` file is ever written to disk.
+- **Consequences:** Faster, simpler restarts; encryption still covers the index. Fixed overhead of about 0.86 MB (4-bit) per index.
+- **Revisit if:** the blob grows too large to checkpoint quickly (then checkpoint less often and rely on the outbox).
+
+### D-021 — Start Ollama through a script that applies and verifies its settings
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Context:** The installer launched Ollama from a shell that predated our `OLLAMA_*` user variables, so the first server ran with defaults
+  (`Ollama cloud disabled: false`). The tray app has the same problem whenever it is launched from a stale environment.
+- **Decision:** `scripts/start_ollama.ps1` loads the variables, restarts `ollama serve` with its log in `%LOCALAPPDATA%\Ragnarok\logs`, and prints the applied
+  settings from the server's own "server config" line. `rag doctor` (later) will do the same check.
+- **Consequences:** We can show evidence that local-only mode is on (`Ollama cloud disabled: true`) instead of assuming it.
