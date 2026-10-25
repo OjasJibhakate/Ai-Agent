@@ -29,6 +29,8 @@ from ragnarok.runtime.gateway import GatewayError
 
 PROMPTS = Path(__file__).parent.parent / "runtime" / "prompts"
 DOC_PREFIX = "search_document: "
+# Memory-tool traffic and other internal events are never mined (no feedback loop).
+INGESTIBLE = frozenset({"user_message", "assistant_message", "tool_result", "file", "trigger"})
 
 EXTRACT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -162,6 +164,10 @@ class Ingestor:
     async def ingest_pending(self, limit: int = 40) -> IngestReport:
         report = IngestReport()
         events = await asyncio.to_thread(self.store.pending_events, limit)
+        internal = [e["id"] for e in events if e["kind"] not in INGESTIBLE]
+        if internal:
+            await asyncio.to_thread(self.store.mark_ingested, internal)
+        events = [e for e in events if e["kind"] in INGESTIBLE]
         for start in range(0, len(events), self.batch_size):
             batch = events[start : start + self.batch_size]
             report.events += len(batch)

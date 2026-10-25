@@ -385,7 +385,7 @@ class MemoryStore:
         *,
         session_id: str | None = None,
         retention_days: int = 30,
-        dedupe_seconds: int = 300,
+        dedupe_seconds: int | None = 300,
     ) -> int | None:
         """Append a raw event. Secrets are scrubbed, trivial text is dropped, repeats are merged."""
         text = scrub_secrets(payload).strip()
@@ -393,9 +393,13 @@ class MemoryStore:
             return None
         digest = content_hash(f"{kind}:{text}")
         now = self.clock()
-        floor = _stamp(now - timedelta(seconds=dedupe_seconds))
-        dup = self.vault.query(
-            "SELECT id FROM events WHERE content_hash = ? AND ts >= ?", (digest, floor)
+        floor = _stamp(now - timedelta(seconds=dedupe_seconds or 0))
+        dup = (
+            self.vault.query(
+                "SELECT id FROM events WHERE content_hash = ? AND ts >= ?", (digest, floor)
+            )
+            if dedupe_seconds
+            else []  # None/0: every event is kept (tool calls must each be logged)
         )
         if dup:
             return dup[0][0]
@@ -450,6 +454,13 @@ class MemoryStore:
             f"SELECT {_MEMORY_COLUMNS} FROM memories WHERE id = ?", (memory_id,)
         )
         return _row_to_memory(rows[0]) if rows else None
+
+    def version(self) -> tuple:
+        """Changes whenever memories are added, removed, re-pinned, or change status."""
+        return self.vault.query(
+            "SELECT count(*), coalesce(max(id), 0), coalesce(sum(status != 'active'), 0),"
+            " coalesce(sum(pinned), 0) FROM memories"
+        )[0]
 
     def history(self, memory_id: int) -> list[Memory]:
         """The memory followed back through everything it superseded, newest first."""

@@ -38,3 +38,9 @@ class MemoryHit(BaseModel):
     semantic_rank: int | None  # 1-based rank in the vector list, None if absent
     rrf: float
     score: float  # final score after reranking
+
+
+def format_memory(m: Memory) -> str:
+    """One memory as a data line: id, type, origin, confidence and date, then the statement."""
+    meta = f"{m.memory_type}, {m.origin} {m.confidence:.2f}, {m.created_at[:10]}"
+    return f"[m:{m.id} {meta}] {m.content}"

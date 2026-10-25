@@ -162,5 +162,16 @@ class Gateway:
         except (ValueError, KeyError) as exc:
             raise GatewayError("chat_json returned invalid JSON") from exc
 
+    async def warm_up(self) -> float:
+        """Load both models now so the first user message doesn't pay for it. Returns seconds."""
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        await self.embed(["search_query: warm up"])
+        async for _ in self.chat_stream(
+            [{"role": "user", "content": "hi"}], num_predict=1, temperature=0
+        ):
+            pass
+        return loop.time() - start
+
     async def aclose(self) -> None:
         await self._client.aclose()

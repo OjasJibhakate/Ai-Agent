@@ -34,3 +34,4 @@ exclude = ["*.md"]
 
 [tool.ruff.lint.per-file-ignores]
 "bench/*" = ["E501"]  # data tables and report lines
+"tests/*" = ["RUF059"]  # unused names from tuple-returning test setup helpers
