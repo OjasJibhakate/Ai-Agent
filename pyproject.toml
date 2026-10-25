@@ -1,0 +1,29 @@
+[project]
+name = "ragnarok"
+version = "0.0.1"
+description = "Ragnarok - local persistent-memory agent"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "numpy",
+  "sqlcipher3",
+  "turbovec",
+  "httpx",
+  "pydantic>=2",
+]
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["docs", "*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF"]
+
+[tool.ruff.format]
+docstring-code-format = false
+exclude = ["*.md"]
