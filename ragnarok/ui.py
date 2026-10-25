@@ -193,7 +193,8 @@ class Console:
         if w.first_run:
             hint = (
                 f"Try {self.sky(chr(34) + 'remember that I prefer meetings after 2pm' + chr(34))}"
-                f" or {self.sky(chr(34) + 'open steam' + chr(34))}."
+                f", {self.sky(chr(34) + 'open steam' + chr(34))}"
+                f" or {self.sky(chr(34) + 'find my data structure files' + chr(34))}."
             )
         else:
             hint = "Ask anything, or tell me something to remember."

@@ -25,6 +25,7 @@ from ragnarok.runtime.gateway import CHAT_MODEL, OLLAMA_URL, Gateway
 from ragnarok.runtime.loop import Agent, Session
 from ragnarok.runtime.tools import Tool, memory_tools
 from ragnarok.skills.apps import WindowsApps, app_tools
+from ragnarok.skills.files import file_tools
 from ragnarok.ui import Console, Welcome
 
 LEARN_AFTER_SECONDS = 15.0  # idle time before the background learner starts (read at run time)
@@ -98,7 +99,7 @@ class ChatApp:
         self.approve_line = approve_line
         self._catalog = WindowsApps() if tools is None else None
         if tools is None:
-            tools = memory_tools(rt.svc, rt.ingestor) + app_tools(self._catalog)
+            tools = memory_tools(rt.svc, rt.ingestor) + app_tools(self._catalog) + file_tools()
         self.agent = Agent(
             rt.store, rt.svc, rt.ingestor, rt.gateway, approve=self._approve, tools=tools
         )

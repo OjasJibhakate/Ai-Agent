@@ -402,3 +402,13 @@ Tests: **193 pass**, `ruff` clean.
 
 ### Next
 M5: consolidation, forgetting, undo for a wrong supersede, pin/unpin and export from the CLI.
+
+## 2026-10-25 (night) - file search for the owner's Desktop
+
+- The owner asked the agent to find data-structure files on the Desktop; it had no file tool. Added `find_files`, `list_folder`, `read_file` (D-031).
+- Real folders (names only): the Desktop is `OneDrive\Desktop` (21 top-level items plus large project folders), Documents 3 + 33, Downloads 4. The first search over all roots took 0.4-0.9 s.
+- Run on the real model with the owner's question: the model chose to search inside files and answered with two unrelated READMEs, missing `Data_structure_certificate.pdf`. Cause: I had exposed a `contents` option. Fix: names first,
+  text only when few names match, no option for the model. Then the model's summary dropped the file names, so plain lookups now show the list directly.
+- A noisy "weaker matches" fallback made a search for a (correctly hidden) `id_rsa` return 213 irrelevant folders; removed. Ranking put deep folders ahead of `Desktop\Data_structure_certificate.pdf`; now shallow and files first.
+- Tests: **241 pass**, 1 skipped (symlink needs admin; a directory junction test covers the same escape on Windows). Safety cases covered: traversal, outside roots, symlink/junction, secrets by name and by exact path, binary and oversized files, time budget, result caps.
+- Not verified: reading PDFs (unsupported), and how the final screen looks in the owner's terminal.

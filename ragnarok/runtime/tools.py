@@ -17,6 +17,8 @@ from ragnarok.policy.permissions import Risk
 
 # The user-message event of the turn being answered; set by the loop, read by memory_save.
 CURRENT_EVENT: ContextVar[int | None] = ContextVar("current_event", default=None)
+# The user message being answered; lets a tool tell a plain lookup from a bigger request.
+CURRENT_TEXT: ContextVar[str] = ContextVar("current_text", default="")
 MAX_RESULT_CHARS = 4000  # about 1,000 tokens; longer output is cut with a note
 
 

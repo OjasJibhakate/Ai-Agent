@@ -300,3 +300,21 @@ Format: context → decision → alternatives → consequences → revisit if.
     box characters. Models, the Start-menu app list, and learning all happen in the background; learning is cancelled the moment the user types, so quitting is instant.
     Unlearned events stay pending and are read at the next session (the screen says so).
 - **Consequences:** Learning from a conversation now happens during idle time (15 s) or at the next start, not at exit. `rag ingest` and the next `chat` catch up.
+
+### D-031 — Read-only file skill (find, list, read) with a narrow scope
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Context:** The owner asked "is there any file related to datastructure in my desktop" and the agent correctly said it had no file tool.
+- **Decision:** `ragnarok/skills/files.py` adds `find_files`, `list_folder` and `read_file`, all R0, read-only, declared with the roots they may touch.
+  - **Scope:** only Desktop, Documents and Downloads, including the OneDrive copies (this laptop's real Desktop is `OneDrive\Desktop`). Paths are resolved first, so `..`, absolute paths
+    outside the roots, symlinks and directory junctions that lead out are refused. Tested with a real junction on Windows.
+  - **Secrets:** names matching keys, password stores, credentials, `.env`, `.ssh` and similar are skipped by every walk and refused even by exact path. `node_modules`, `.git`, virtualenvs and build folders are skipped.
+  - **Search:** file and folder names first, ignoring case, separators and plurals (so "datastructure" finds `Data_structure_certificate.pdf`); every word must match. Only when fewer than five names match
+    does it also look inside text files (at most 400 files under 1 MB, within a 6 s budget). The model does not choose the mode: when it was allowed to, the 4B model picked "inside files"
+    for the owner's own question and missed the obvious file. Results rank shallow paths first, files before folders.
+  - **Reading:** plain-text types only, 3,500 characters per call with an `offset` to continue. The text is wrapped in `<file_content>` tags, which the system prompt treats as data. PDFs and Office files are
+    reported as unsupported (no parsing library is installed).
+  - **Fast and exact:** a plain lookup ("is there a file about X", "what is in Downloads") that found something shows the list itself and ends the turn (no second model call; the model re-typing long paths was slow and
+    error-prone). If the message asks for more ("...and tell me its first line", open, read, summarise, newest, largest...), or nothing was found, the results go back to the model.
+  - The event log keeps only the first 300 characters of any tool result.
+- **Consequences:** The agent still cannot open, change, move or delete files, and cannot read PDFs. "Open that file" is the natural next skill (it needs an approval rule, since it starts a program).
+- **Test hygiene found on the way:** `default_roots` read the real `OneDrive` environment variable, so tests with a pretend home searched the owner's real folders. Environment-based roots now apply only to the real profile.

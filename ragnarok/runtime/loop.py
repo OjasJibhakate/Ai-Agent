@@ -28,6 +28,7 @@ from ragnarok.runtime.context import build_messages
 from ragnarok.runtime.gateway import ChatResult, GatewayError
 from ragnarok.runtime.tools import (
     CURRENT_EVENT,
+    CURRENT_TEXT,
     MAX_RESULT_CHARS,
     Tool,
     ToolResult,
@@ -35,6 +36,7 @@ from ragnarok.runtime.tools import (
 )
 
 MAX_STEPS = 6  # model calls per user turn
+LOG_RESULT_CHARS = 300  # the event log keeps a short record, not whole files
 LOOP_GUARD = 3  # the same call with the same arguments this many times stops the turn
 
 Approver = Callable[[str, dict[str, Any], permissions.Decision], Awaitable[bool]]
@@ -112,6 +114,7 @@ class Agent:
         t_start = time.perf_counter()
         user_event = await self._log(session, "user_message", text)
         CURRENT_EVENT.set(user_event)
+        CURRENT_TEXT.set(text)
 
         # hot path: retrieval with no model call besides the query embedding
         t = time.perf_counter()
@@ -221,7 +224,12 @@ class Agent:
             output = f"error: {type(exc).__name__}"
         if len(output) > MAX_RESULT_CHARS:
             output = output[:MAX_RESULT_CHARS] + "\n[truncated]"
-        await self._log(session, "memory_tool_result", f"{name}: {output}")
+        logged = (
+            output
+            if len(output) <= LOG_RESULT_CHARS
+            else output[:LOG_RESULT_CHARS] + f" ...[{len(output)} chars]"
+        )
+        await self._log(session, "memory_tool_result", f"{name}: {logged}")
         result.trace.append(ToolTrace(name, clean, decision.rule, True, output))
         return output, final
 
