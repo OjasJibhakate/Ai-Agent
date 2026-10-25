@@ -67,7 +67,7 @@ Times are commit times (IST). Details and numbers for each line are in the work 
 | 2026-10-25 18:53 | `persistent_memory.py`: the whole memory lifecycle in one file, plus correct, revert, pin, export and stats | `3306cfb` |
 | 2026-10-25 19:39 | **M5** Weekly summaries (validated model output), forgetting by usefulness, delete cascade, undo, daily maintenance | `1eda367` |
 | 2026-10-25 19:45 | CLI controls for all of it (`memory pin\|correct\|revert\|export\|stats\|consolidate\|prune\|maintain\|undo-summary`) and idle-time maintenance in the chat | `27fedd9` |
-| 2026-10-25 20:10 | `open_website`: "open chrome and go to yt and search ..." now works (sites and searches in the browser you name; hostile addresses refused; multi-step requests no longer cut short) | `this commit` |
+| 2026-10-25 20:10 | `open_website`: "open chrome and go to yt and search ..." now works (sites and searches in the browser you name; hostile addresses refused; multi-step requests no longer cut short) | `8412f03` |
 
 336 tests pass and `ruff` is clean as of the last commit.
 
