@@ -9,19 +9,14 @@ from ragnarok.gui.chat import HEIGHT, WIDTH, ChatWindow
 
 
 @pytest.fixture
-def window():
-    try:
-        root = tk.Tk()
-    except tk.TclError:
-        pytest.skip("no display to draw on")
-    root.withdraw()
+def window(hidden_tk):
+    root = hidden_tk
     bridge = Bridge()
     busy: list[bool] = []
     closed: list[bool] = []
     chat = ChatWindow(root, bridge, on_busy=busy.append, on_close=lambda: closed.append(True))
     chat.busy_log, chat.closed_log = busy, closed  # type: ignore[attr-defined]
     yield chat, bridge, root
-    root.destroy()
 
 
 def labels(widget: tk.Misc) -> list[tk.Label]:

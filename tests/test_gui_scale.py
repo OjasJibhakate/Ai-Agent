@@ -20,14 +20,8 @@ def test_the_cat_is_a_little_smaller_than_the_old_2x_size_and_grows_with_display
 
 
 @pytest.fixture
-def root():
-    try:
-        r = tk.Tk()
-    except tk.TclError:
-        pytest.skip("no display to draw on")
-    r.withdraw()
-    yield r
-    r.destroy()
+def root(hidden_tk):
+    return hidden_tk
 
 
 def image_of(rows: list[str]) -> tk.PhotoImage:
