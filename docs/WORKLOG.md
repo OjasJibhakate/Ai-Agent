@@ -133,3 +133,51 @@ Not yet checked: whether the SQLCipher build includes FTS5. That is a Phase 0 ta
   - https://discuss.pytorch.kr/t/turbovec-turboquant-rust/10295
   - https://www.cognee.ai/open-source-memory-frameworks-llm-agents
   - https://vectorize.io/articles/best-ai-agent-memory-systems
+
+## 2026-10-25 (evening) - M0: environment, installs, first checks
+
+### Install (what actually happened)
+- `winget install Ollama.Ollama` stalled with the download stuck at 0 MB for about 10 minutes, so I stopped it.
+  `uv` installed fine through winget (0.13.5).
+- A direct `curl` download crawled at about 31 KB/s while several downloads competed. A clean test then showed about 0.5-1 MB/s to
+  Cloudflare/GitHub, and the resumable retry (`curl -C -` with a stall timeout) ran at about 2.9 MB/s.
+  The 1,662,012,016-byte installer finished and matched the expected size exactly.
+- The installer's Authenticode signature is valid: Ollama Inc., Toronto. Ollama 0.40.11 installed silently into
+  `%LOCALAPPDATA%\Programs\Ollama` (3.1 GB, 989 files).
+- **Gotcha:** the installer started Ollama from my older shell, so the new `OLLAMA_*` variables were not applied
+  (`Ollama cloud disabled: false`). I restarted the server with the variables loaded and its log going to a file.
+  Verified from the server's own config line: `OLLAMA_NO_CLOUD:true`, `KEEP_ALIVE` forever, `MAX_LOADED_MODELS:2`, `NUM_PARALLEL:1`,
+  `CONTEXT_LENGTH:16384`, `FLASH_ATTENTION:true`, `KV_CACHE_TYPE:q8_0`, and `Ollama cloud disabled: true`.
+  GPU detected: NVIDIA GeForce RTX 4050 Laptop (CUDA); the Intel iGPU is dropped by default. See D-021.
+- Models are **not downloaded yet**: `nomic-embed-text` (~0.3 GB) and `qwen3.5:4b` (3.3 GB) are next.
+
+### Python environment
+- `uv python install 3.12` gave CPython 3.12.15. `uv sync` installed `sqlcipher3` 0.6.4, `turbovec` 1.1.2, numpy 2.5.4, pydantic 2.14.1,
+  pytest 9.1.1, ruff 0.17.2 (in `.venv`, not committed; `uv.lock` is committed).
+
+### M0 check results
+- **SQLCipher:** 4.19.0 (SQLite 3.53.4), FTS5 compiled in, exact-identifier search works, the file header is not `SQLite format 3`,
+  demo strings are absent from the raw file, and opening without or with the wrong key fails.
+- **Turbovec 1.1.2:** has every API we need (external uint64 ids, `remove`, `contains`, allowlist search, `to_bytes`/`from_bytes`).
+  The README and binary describe rotation + Lloyd-Max scalar quantization + per-vector bias correction + optional calibration.
+  **No QJL stage found** (README and binary strings only; the Rust source has not been read). Measured size: ~0.86 MB fixed
+  overhead at 4-bit, then ~396 B/vector (7.0x smaller than float32 at 20k vectors); 2-bit ~204 B/vector (13.6x).
+  Details are in `docs/MEMORY.md` section 8.1.
+- **Tests:** 10 pass (`tests/test_m0_sqlcipher.py`, `tests/test_m0_turbovec_api.py`). `ruff check` and `ruff format --check` are clean.
+
+### Mistakes and fixes
+- My first Turbovec size test assumed no fixed overhead and failed (1.05 MB for 500 vectors vs the 192 KB I expected).
+  Measuring showed a fixed header, not per-vector bloat, so the test was corrected to check the marginal size.
+- `ruff format .` also reformatted Python code blocks inside the markdown docs, including the teammate's `ARCHITECTURE-1.md`.
+  I confirmed the diff was formatting only, reverted all three files with `git checkout`, and restricted ruff to Python
+  (`extend-exclude` + `format.exclude` in `pyproject.toml`). No docs were committed in that state.
+- `pyproject.toml` was first written with a UTF-8 byte-order mark, which pytest's TOML parser rejects. Removed the BOM.
+
+### Decisions
+D-020 (store the Turbovec index as bytes inside the vault) and D-021 (start Ollama via a verified script).
+
+### Next
+1. Pull `nomic-embed-text` and `qwen3.5:4b`; confirm `ollama ps` shows `100% GPU`.
+2. Write `bench/llm_bench.py` and `bench/embed_bench.py`: embedding latency, vector dimension (expect 768), chat tok/s,
+   first-token latency, and whether `think: false` is honored. Record the numbers here.
+3. Then M1: the encrypted vault, schema and migrations.
