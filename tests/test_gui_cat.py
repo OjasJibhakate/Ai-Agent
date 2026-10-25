@@ -1,5 +1,6 @@
 """The cat's behaviour and pictures: no window needed."""
 
+import itertools
 import random
 
 import pytest
@@ -199,9 +200,10 @@ FLOOR, WIDTH, HEIGHT = 1000.0, 78.0, 78.0
 
 
 def watcher(seed: int = 1, x: float = 600.0) -> CatBrain:
-    return CatBrain(
-        LEFT, RIGHT, rng=random.Random(seed), x=x, floor=FLOOR, width=WIDTH, height=HEIGHT
-    )
+    """A cat at rest where it is, so that only what the test does can move it."""
+    b = CatBrain(LEFT, RIGHT, rng=random.Random(seed), x=x, floor=FLOOR, width=WIDTH, height=HEIGHT)
+    b._enter("sit", 1e9)
+    return b
 
 
 def move_pointer(b: CatBrain, x: float, y: float, seconds: float, dt: float = 0.04):
@@ -235,7 +237,7 @@ def test_a_pointer_that_comes_near_is_chased_then_watched():
     poses = move_pointer(b, 420, FLOOR + 20, 8.0)  # then it comes close
     modes = [p.mode for p in poses]
     assert "chase" in modes and modes[-1] == "watch"
-    assert poses[-1].frame in ("sit", "sit_blink") and poses[-1].facing == 1
+    assert poses[-1].frame.startswith("sit") and poses[-1].facing == 1
     assert abs((poses[-1].x + WIDTH / 2) - 420) <= 100  # sat a little way from it
     start = modes.index("chase")
     assert (poses[start + 15].x - poses[start].x) / 0.6 > 100  # it runs, it does not stroll
@@ -338,16 +340,18 @@ def test_letting_go_in_the_air_it_falls_bounces_and_lands_on_the_taskbar():
     b.drag_to(900, 200)
     b.drop()
     assert b.mode == "fall"
-    lifts, modes = [], []
+    lifts, modes, xs = [], [], []
     for _ in range(200):
         pose = b.step(0.016)
         lifts.append(pose.lift)
         modes.append(pose.mode)
+        xs.append(pose.x)
     assert lifts[0] < 200 and all(lift >= 0 for lift in lifts)
     first_floor = next(i for i, lift in enumerate(lifts) if lift == 0)
     assert any(lift > 3 for lift in lifts[first_floor + 1 : first_floor + 12])  # it bounced
-    assert modes[-1] != "fall" and lifts[-1] == 0  # and it landed
-    assert b.x == 900  # where you let go
+    landed = next(i for i, m in enumerate(modes) if m != "fall")
+    assert lifts[landed] == 0  # and it landed
+    assert xs[landed] == 900  # where you let go
 
 
 def test_letting_go_on_the_taskbar_just_puts_it_down():
@@ -417,6 +421,7 @@ def test_a_yawn_opens_wide_and_closes_and_the_cat_sometimes_dozes_off_after_it()
     after_yawn = {"sleep": 0, "other": 0}
     for seed in range(60):
         c = brain(seed)
+        c.clock_total = 120.0  # it has been around a while (a new cat stays awake for a minute)
         c._enter("yawn", 0.5)
         for _ in range(8):
             pose = c.step(0.1)
@@ -532,3 +537,116 @@ def test_a_calm_stroll_is_short_and_a_rest_is_long():
     assert (
         rests and sorted(rests)[len(rests) // 2] > 25
     )  # the typical rest is half a minute or more
+
+
+# ---- the finer things: eyes, fidgets, lying down, stretching ---------------------------
+
+
+def test_its_eyes_follow_the_pointer_when_it_is_near_and_not_when_it_is_far_or_close_by():
+    b = watcher(x=600)  # its centre is at 639, looking right
+    b.set_cursor(900, FLOOR + 20)
+    assert b.step(0.04).look == 1  # the pointer is ahead of it
+    b.set_cursor(300, FLOOR + 20)
+    assert b.step(0.04).look == -1  # behind it: the pupils turn the other way
+    b.facing = -1  # now it faces left, so the same pointer (to its left) is "ahead"
+    assert b.step(0.04).look == 1
+    b.set_cursor(650, FLOOR + 20)
+    assert b.step(0.04).look == 0  # right on top of it
+    b.set_cursor(1800, FLOOR + 20)
+    assert b.step(0.04).look == 0  # far away
+
+
+def test_it_does_not_look_at_the_pointer_while_asleep_or_carried():
+    b = watcher(x=600)
+    b._enter("sleep", 1e9)
+    b.set_cursor(900, FLOOR + 20)
+    assert b.step(0.04).look == 0
+    b.drag_to(700, 50)
+    assert b.step(0.04).look == 0
+
+
+def test_a_sitting_cat_now_and_then_swishes_its_tail_or_twitches_an_ear():
+    seen: set[str] = set()
+    swish_lengths = []
+    for seed in range(10):
+        b = watcher(seed)
+        run_for = 0
+        for _ in range(60 * 10 * 4):
+            pose = b.step(0.1)
+            if pose.frame.startswith("sit_swish"):
+                run_for += 1
+                seen.add("swish")
+            else:
+                if run_for:
+                    swish_lengths.append(run_for)
+                run_for = 0
+            if pose.frame == "sit_ear":
+                seen.add("ear")
+    assert seen == {"swish", "ear"}
+    assert 8 <= max(swish_lengths) <= 20  # a swish lasts a second or two, not forever
+
+
+def test_the_fidgets_are_few_and_far_between():
+    b = watcher(5)
+    fidgeting = sum(b.step(0.1).frame.startswith(("sit_swish", "sit_ear")) for _ in range(6000))
+    assert fidgeting / 6000 < 0.2  # under a fifth of the time
+
+
+def test_a_sitting_cat_breathes_slowly_between_two_frames():
+    b = watcher(2)
+    frames = [b.step(0.1).frame for _ in range(150)]
+    assert {"sit", "sit_b"} <= set(frames)
+    changes = sum(1 for a, c in itertools.pairwise(frames) if a != c and {a, c} == {"sit", "sit_b"})
+    assert 3 <= changes <= 12  # a breath every couple of seconds, not a flicker
+
+
+def test_it_lies_down_before_it_sleeps_and_stretches_when_it_wakes():
+    b = watcher(1)
+    b._enter("sleep", 6.0)
+    frames = []
+    for _ in range(100):
+        pose = b.step(0.1)
+        frames.append((pose.mode, pose.frame))
+    assert frames[0] == ("sleep", "loaf") and ("sleep", "sleep0") in frames  # lies down, then dozes
+    assert ("stretch", "stretch0") in frames and ("stretch", "stretch1") in frames  # then stretches
+
+
+def test_a_stretch_often_ends_in_a_yawn_but_not_always():
+    ended = {"yawn": 0, "other": 0}
+    for seed in range(60):
+        b = watcher(seed)
+        b._enter("stretch", 1.0)
+        for _ in range(14):
+            pose = b.step(0.1)
+        ended["yawn" if pose.mode == "yawn" else "other"] += 1
+    assert 12 < ended["yawn"] < 48
+
+
+def test_waking_up_is_the_only_way_into_a_stretch():
+    seen = set()
+    for seed in range(6):
+        b = brain(seed)
+        previous = ""
+        for _ in range(60 * 60 * 10):
+            pose = b.step(0.1)
+            if pose.mode == "stretch" and previous != "stretch":
+                seen.add(previous)
+            previous = pose.mode
+    assert seen == {"sleep"}
+
+
+def test_a_cat_that_has_just_appeared_stays_awake_for_its_first_minute():
+    from ragnarok.gui.brain import WAKEFUL_AT_START
+
+    for seed in range(40):
+        b = brain(seed)
+        modes = {b.step(0.1).mode for _ in range(int(WAKEFUL_AT_START * 10) - 5)}
+        assert "sleep" not in modes, seed
+    napped = False
+    for seed in range(40):  # but it can nap after that
+        b = brain(seed)
+        for _ in range(60 * 60 * 10):
+            if b.step(0.1).mode == "sleep":
+                napped = True
+                break
+    assert napped

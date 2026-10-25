@@ -602,3 +602,12 @@ Variety and follow-up robustness, `open_path` ("open the ppt you made"), latency
 ### 2026-10-26 (late night) - one short command: meow
 - Owner: "i don't want to run this whole command i want just one short command". `rag gui --command on` writes `meow.cmd` and `meow.vbs` to `%LOCALAPPDATA%\Microsoft\WindowsApps` (already on the PATH). Checked live from a fresh PowerShell: `meow` starts the cat with no console window left behind; a second `meow` opened the running cat's chat and did not start a second cat.
 - Tests: **1386 pass** (new: the command files, removal, PATH check, the summon event).
+
+### 2026-10-26 (late night) - a more detailed cat, a smaller chat, a smaller cat (D-044 addendum 2)
+- Owner: "make the cat more detailed in both look and behaviour and make the chat box a little small", then "make the cat just a little small".
+- Look: `gui/catart.py` draws every pose from shared parts (tabby stripes, green eyes, collar, tail, whiskers, a lighter chest); `sprites.py` now has 38 frames of 44 x 36 cat pixels, including loaf, stretch, tail swish, ear twitch, breathing and pupils that look left or right.
+- Behaviour (still calm by default): stretches after waking, swishes its tail and twitches an ear while sitting, breathes slowly, follows a nearby pointer with its eyes, lies as a "loaf" before it sleeps, and stays awake for its first minute. The last one came from a live check: a freshly started cat was asleep at once and looked missing.
+- Size: chat window 400 x 520 to 340 x 420 with 9 pt text; cat 7/4 screen pixels per cat pixel instead of 2 (about 68 x 61 px on a 1080p screen at 100% scaling, measured on a real screenshot; it grows with Windows scaling).
+- Tests: **1478 pass, 5 skipped**, ruff clean. New: `test_gui_art` (every frame has the same size, only known colours, nothing clipped at the edges), `test_gui_scale` (size at 100/125/150/200% scaling, the outline survives fractional scaling, the background stays see-through), more behaviour tests (stretch, swish, breathing, look, loaf, awake-at-start). One test needed changing because a new cat no longer dozes off in its first minute.
+- Looked at on the real screen with the throwaway vault: the cat stands on the taskbar edge, the outline is crisp, and the test cat was stopped afterwards.
+- Not verified: the owner has not yet used the new look with their real vault. Open question for the owner: an "unlock automatically on this Windows account" checkbox for an existing vault (it touches key handling, so it waits for a yes).

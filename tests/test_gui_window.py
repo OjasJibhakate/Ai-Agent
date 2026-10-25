@@ -5,7 +5,7 @@ import tkinter as tk
 import pytest
 
 from ragnarok.gui.bridge import Bridge
-from ragnarok.gui.chat import ChatWindow
+from ragnarok.gui.chat import WIDTH, ChatWindow
 
 
 @pytest.fixture
@@ -168,7 +168,7 @@ def test_the_window_opens_inside_the_screen_above_the_cat_even_at_the_edges(wind
     assert chat.top.winfo_x() >= 8
     chat.show(1915, 600, (1920, 1080))  # and the far right
     root.update_idletasks()
-    assert chat.top.winfo_x() + 400 <= 1920 - 8 + 1
+    assert chat.top.winfo_x() + WIDTH <= 1920 - 8 + 1
     chat.show(900, 100, (1920, 1080))  # a cat near the top of a short screen
     root.update_idletasks()
     assert chat.top.winfo_y() >= 8

@@ -1,4 +1,5 @@
 """Test helper: click the cat, type a message, press Enter. Usage: gui_drive.py "message" """
+
 import subprocess
 import sys
 import time

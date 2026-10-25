@@ -13,8 +13,8 @@ from typing import Any
 from ragnarok.gui import theme as t
 from ragnarok.gui.bridge import Bridge
 
-WIDTH, HEIGHT = 400, 520
-WRAP = WIDTH - 110  # how wide a bubble's text may get
+WIDTH, HEIGHT = 340, 420
+WRAP = WIDTH - 96  # how wide a bubble's text may get
 DOTS = ["Thinking", "Thinking.", "Thinking..", "Thinking..."]
 QUIT_WORDS = ("/quit", "/exit", "/q")
 
@@ -46,7 +46,7 @@ class ChatWindow:
         body.pack(fill="both", expand=True, padx=1, pady=1)
 
         # header: draggable, with the title, the status and a close button
-        header = tk.Frame(body, bg=t.PANEL, height=38)
+        header = tk.Frame(body, bg=t.PANEL, height=32)
         header.pack(fill="x")
         header.pack_propagate(False)
         tk.Label(header, text="✦", fg=t.VIOLET, bg=t.PANEL, font=t.TITLE).pack(
@@ -212,7 +212,7 @@ class ChatWindow:
         row = self._row(pady=(0, 0))
         label = tk.Label(
             row, text=text, justify="left", anchor="w", fg=colour, bg=t.BG,
-            font=t.MONO if mono else t.SMALL, wraplength=WIDTH - 60 - indent,
+            font=t.MONO if mono else t.SMALL, wraplength=WIDTH - 52 - indent,
         )  # fmt: skip
         label.pack(side="left", padx=(8 + indent, 0))
         label.bind("<MouseWheel>", self._wheel)

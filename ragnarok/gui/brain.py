@@ -43,7 +43,7 @@ CALM_CHOICES = (
 )  # fmt: skip
 CALM_DURATION = {
     "sit": (30.0, 80.0), "stand": (10.0, 25.0), "groom": (5.0, 9.0), "sleep": (90.0, 240.0),
-    "yawn": (2.0, 2.4), "scratch": (3.0, 5.0), "play": (0.5, 0.5),
+    "yawn": (2.0, 2.4), "scratch": (3.0, 5.0), "play": (0.5, 0.5), "stretch": (2.6, 3.2),
 }  # fmt: skip
 LIVELY_CHOICES = (
     ("walk", 5.0), ("sit", 3.0), ("stand", 1.2), ("groom", 1.4), ("sleep", 1.0),
@@ -51,8 +51,9 @@ LIVELY_CHOICES = (
 )  # fmt: skip
 LIVELY_DURATION = {
     "sit": (4.0, 9.0), "stand": (1.0, 3.0), "groom": (2.5, 4.5), "sleep": (12.0, 28.0),
-    "yawn": (2.0, 2.4), "scratch": (2.2, 3.6), "play": (0.5, 0.5),
+    "yawn": (2.0, 2.4), "scratch": (2.2, 3.6), "play": (0.5, 0.5), "stretch": (2.6, 3.2),
 }  # fmt: skip
+WAKEFUL_AT_START = 60.0  # seconds after it appears before it may doze off
 MAX_STROLL = 260.0  # a calm walk goes at most this far
 PLAY_REACH = 46.0  # how far it dashes when it bats at nothing
 FOLLOW_MODES = ("chase", "watch", "pounce", "purr")
@@ -66,6 +67,7 @@ class Pose:
     facing: int  # 1 looks right, -1 looks left
     mode: str
     lift: float = 0.0  # pixels above the taskbar (a jump, a fall, being carried)
+    look: int = 0  # which way the pupils turn, as the picture sees it (-1, 0, 1)
 
 
 class CatBrain:
@@ -103,6 +105,9 @@ class CatBrain:
         self._hover = 0.0
         self._lost = 0.0
         self._near = 0.0  # how long the pointer has been close
+        self._micro_in = self.rng.uniform(5.0, 12.0)  # until the next small fidget
+        self._micro = ""  # "swish" (the tail) or "ear" (an ear twitch), while it lasts
+        self._micro_left = 0.0
         self._pounce_from = 0.0
         self._last_pounce = -1e9
         self.clock_total = 0.0  # time since it was made
@@ -175,6 +180,7 @@ class CatBrain:
         self._since_blink += dt
         self._read_cursor(dt)
         self._react_to_cursor(dt)
+        self._fidget(dt)
         if self.mode == "fall":
             self._fall(dt)
         elif self.mode in FOLLOW_MODES:
@@ -185,7 +191,36 @@ class CatBrain:
             self._play()
         elif self.mode not in ("carried", "think", "alert") and self.clock >= self.length:
             self._choose()
-        return Pose(self._frame(), self.x, self.facing, self.mode, self.lift)
+        return Pose(self._frame(), self.x, self.facing, self.mode, self.lift, self._look())
+
+    def _fidget(self, dt: float) -> None:
+        """While it sits, now and then: the tail swishes or an ear twitches (never both at once)."""
+        if self.mode not in ("sit", "watch", "think"):
+            self._micro, self._micro_left = "", 0.0
+            return
+        if self._micro_left > 0:
+            self._micro_left -= dt
+            if self._micro_left <= 0:
+                self._micro = ""
+            return
+        self._micro_in -= dt
+        if self._micro_in <= 0:
+            self._micro = self.rng.choices(["swish", "ear"], [0.7, 0.3])[0]
+            self._micro_left = 1.5 if self._micro == "swish" else 0.35
+            self._micro_in = self.rng.uniform(6.0, 14.0)
+
+    def _look(self) -> int:
+        """Its eyes follow the pointer when it is near: +1 is toward the way the picture faces."""
+        if (
+            self.cursor is None
+            or self.width <= 0
+            or self.mode not in ("sit", "stand", "watch", "walk")
+        ):
+            return 0
+        gap = self.cursor[0] - (self.x + self.width / 2)
+        if abs(gap) < 45 or abs(gap) > 700:
+            return 0
+        return (1 if gap > 0 else -1) * self.facing
 
     # ---- the pointer ----------------------------------------------------------------------------
 
@@ -325,9 +360,20 @@ class CatBrain:
 
     def _choose(self) -> None:
         self.lift = 0.0
-        if self.mode == "yawn" and self.rng.random() < 0.45:
+        if (
+            self.mode == "yawn"
+            and self.clock_total >= WAKEFUL_AT_START
+            and self.rng.random() < 0.45
+        ):
             return self._enter("sleep")  # a yawn is often followed by a nap
-        modes, weights = zip(*(LIVELY_CHOICES if self.lively else CALM_CHOICES), strict=True)
+        if self.mode == "sleep":
+            return self._enter("stretch")  # and waking up is a good long stretch
+        if self.mode == "stretch" and self.rng.random() < 0.5:
+            return self._enter("yawn")
+        choices = LIVELY_CHOICES if self.lively else CALM_CHOICES
+        if self.clock_total < WAKEFUL_AT_START:  # a cat that has just appeared does not nap at once
+            choices = tuple(c for c in choices if c[0] != "sleep")
+        modes, weights = zip(*choices, strict=True)
         pick = self.rng.choices(modes, weights)[0]
         if self.mode == "sleep" and pick == "sleep":
             pick = "stand"
@@ -385,7 +431,13 @@ class CatBrain:
         if mode == "chase":
             return f"walk{int(self.clock / (STEP_TIME * 0.55)) % 4}"
         if mode in ("sit", "watch"):
-            return "sit_blink" if self._blinking() else "sit"
+            if self._micro == "swish":
+                return f"sit_swish{int(self.clock_total / 0.22) % 2}"
+            if self._micro == "ear":
+                return "sit_ear"
+            if self._blinking():
+                return "sit_blink"
+            return "sit_b" if int(self.clock_total / 1.8) % 2 else "sit"  # slow breathing
         if mode == "stand":
             return "stand_blink" if self._blinking() else "stand"
         if mode == "groom":
@@ -397,7 +449,11 @@ class CatBrain:
         if mode == "play":
             return "pounce"
         if mode == "sleep":
+            if self.clock < 2.5:
+                return "loaf"  # first it lies down, eyes still open
             return f"sleep{int(self.clock / 0.9) % 3}"
+        if mode == "stretch":
+            return "stretch1" if 0.6 < self.clock < self.length - 0.6 else "stretch0"
         if mode == "think":
             return f"think{int(self.clock / 0.5) % 3 + 1}"
         if mode == "alert":

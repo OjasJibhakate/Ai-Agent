@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+from fractions import Fraction
 from pathlib import Path
 
 import httpx
@@ -23,9 +24,21 @@ from ragnarok.gui.brain import CatBrain
 from ragnarok.gui.bridge import Bridge, GuiConsole
 from ragnarok.gui.chat import ChatWindow
 
-ZOOM = 3
+CAT_SCALE = Fraction(7, 4)  # screen pixels per cat pixel (7/4 keeps every outline pixel visible)
 FRAME_MS = 40
-SINK = 3  # pixels the paws dip into the taskbar, so the cat stands on it rather than floats
+SINK = 2  # cat pixels the paws dip into the taskbar, so the cat stands on it rather than floats
+
+
+def cat_ratio(dpi_scale: float = 1.0) -> Fraction:
+    """Screen pixels per cat pixel: 7/4 at normal size, more on a screen with Windows scaling."""
+    return CAT_SCALE * Fraction(dpi_scale).limit_denominator(4)
+
+
+def scaled(image: tk.PhotoImage, ratio: Fraction) -> tk.PhotoImage:
+    """A picture at a fractional size: enlarge by the numerator, then keep every denominator-th
+    pixel. Every cat pixel stays at least one pixel wide, so the thin outline never disappears."""
+    big = image.zoom(ratio.numerator, ratio.numerator)
+    return big.subsample(ratio.denominator, ratio.denominator)
 
 
 def ensure_ollama(bridge: Bridge) -> None:
@@ -55,8 +68,8 @@ class CatApp:
         self.root, self.key, self.home = root, key, home
         self.bridge = Bridge()
         scale = winapi.dpi_scale()
-        self.zoom = max(2, round(ZOOM * scale))
-        self.w, self.h = sprites.W * self.zoom, sprites.H * self.zoom
+        self.ratio = cat_ratio(scale)  # grows with Windows scaling
+        self.w, self.h = round(sprites.W * self.ratio), round(sprites.H * self.ratio)
         left, _top, right, bottom = winapi.work_area()
         self.floor = bottom
         self.screen = winapi.screen_size()
@@ -129,7 +142,7 @@ class CatApp:
                         "{" + " ".join(sprites.PALETTE.get(ch) or sprites.KEY for ch in row) + "}"
                     )
                 image.put(" ".join(lines))
-                out[(name, facing)] = image.zoom(self.zoom, self.zoom)
+                out[(name, facing)] = scaled(image, self.ratio)
         return out
 
     # ---- running ---------------------------------------------------------------------------------
@@ -174,11 +187,14 @@ class CatApp:
         self._last_tick = now
         self.brain.set_cursor(*winapi.cursor_pos())
         pose = self.brain.step(dt)
-        if (pose.frame, pose.facing) != self._shown:
-            self._shown = (pose.frame, pose.facing)
+        frame = pose.frame
+        if pose.look and (f"{frame}@{pose.look}", 1) in self.images:
+            frame = f"{frame}@{pose.look}"  # its eyes turn toward the pointer
+        if (frame, pose.facing) != self._shown:
+            self._shown = (frame, pose.facing)
             self.canvas.itemconfig(self.item, image=self.images[self._shown])
         x = int(pose.x)
-        y = int(self.floor - self.h + SINK * self.zoom // 3 - pose.lift)
+        y = int(self.floor - self.h + SINK * float(self.ratio) - pose.lift)
         if (x, y) != self._last_geo:
             self._last_geo = (x, y)
             self.root.geometry(f"{self.w}x{self.h}+{x}+{y}")

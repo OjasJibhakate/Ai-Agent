@@ -1,4 +1,5 @@
 """Test helper: is the cat ignoring a far pointer, and following a near one?"""
+
 import ctypes
 import sys
 import time
@@ -15,7 +16,11 @@ user32.SetCursorPos(far_x, 1048)
 x0 = find_cat()[0]
 time.sleep(6)
 x1 = find_cat()
-print("far pointer: cat moved", None if x1 is None else x1[0] - x0, "px in 6 s (it wanders on its own)")
+print(
+    "far pointer: cat moved",
+    None if x1 is None else x1[0] - x0,
+    "px in 6 s (it wanders on its own)",
+)
 cat = find_cat()
 near = cat[0] + (230 if cat[0] < 1500 else -230)
 user32.SetCursorPos(near, 1048)

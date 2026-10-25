@@ -16,11 +16,11 @@ GREEN = "#78d696"
 CORAL = "#f08080"
 SKY = "#60a5fa"
 
-UI = ("Segoe UI", 10)
-UI_BOLD = ("Segoe UI Semibold", 10)
+UI = ("Segoe UI", 9)
+UI_BOLD = ("Segoe UI Semibold", 9)
 SMALL = ("Segoe UI", 8)
-MONO = ("Consolas", 9)
-TITLE = ("Segoe UI Semibold", 11)
+MONO = ("Consolas", 8)
+TITLE = ("Segoe UI Semibold", 10)
 
 STEP_GLYPH = {  # a plan step's state -> (glyph, colour)
     "running": ("●", CYAN),
