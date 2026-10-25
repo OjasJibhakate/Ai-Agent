@@ -29,6 +29,7 @@ from ragnarok.memory.ingest import GatewayLlm, Ingestor
 from ragnarok.memory.service import MemoryService
 from ragnarok.memory.store import MemoryStore
 from ragnarok.memory.vault import Vault, VaultKeyError
+from ragnarok.persistent_memory import PersistentMemory
 from ragnarok.runtime.gateway import CHAT_MODEL, EMBED_MODEL, OLLAMA_URL, Gateway
 from ragnarok.ui import Console
 from ragnarok.vault import keys
@@ -149,7 +150,8 @@ def cmd_chat(args: argparse.Namespace) -> int:
     rt = open_runtime(home, unlock(home, use_recovery=args.recovery))
     ui = Console()
     try:
-        asyncio.run(ChatApp(rt, ui, folder=str(home)).run())
+        pm = PersistentMemory(rt.vault, rt.store, rt.svc, rt.ingestor)
+        asyncio.run(ChatApp(rt, ui, folder=str(home), maintenance=pm.maintain).run())
     except KeyboardInterrupt:
         ui.write()
         ui.notice("Interrupted.")
@@ -184,14 +186,113 @@ def _show_memory(ui: Console, m) -> None:
     )
 
 
+CONTROL_ACTIONS = (
+    "pin",
+    "unpin",
+    "correct",
+    "revert",
+    "export",
+    "stats",
+    "consolidate",
+    "prune",
+    "maintain",
+    "undo-summary",
+)
+
+
+def _need_id(act: str, arg: str) -> int:
+    if not arg.isdigit():
+        raise CliError(f"`memory {act}` needs a memory number.")
+    return int(arg)
+
+
+async def _controls(pm: PersistentMemory, ui: Console, args: argparse.Namespace) -> None:
+    """Pin, correct, revert, export, stats and the tidy-up commands."""
+    act, arg = args.action, args.arg
+    if act in ("pin", "unpin", "revert", "undo-summary"):
+        mid = _need_id(act, arg)
+        if act == "pin":
+            await pm.pin(mid)
+            ui.success(f"Pinned m{mid}. It is always in my prompt and never archived.")
+        elif act == "unpin":
+            await pm.unpin(mid)
+            ui.success(f"Unpinned m{mid}.")
+        elif act == "revert":
+            newer = await pm.revert(mid)
+            extra = f" m{newer} was archived (not deleted)." if newer else ""
+            ui.success(f"Brought back m{mid}.{extra}")
+        else:
+            restored = await pm.undo_summary(mid)
+            ui.success(f"Removed summary m{mid}; restored {len(restored)} hidden memories.")
+    elif act == "correct":
+        mid = _need_id(act, arg)
+        if not args.text:
+            raise CliError('`memory correct N --text "the right fact"` needs the new text.')
+        new_id = await pm.correct(mid, args.text)
+        ui.success(
+            f"Replaced m{mid} with m{new_id}. The old version stays in `memory history {new_id}`."
+        )
+    elif act == "export":
+        if not arg:
+            raise CliError("`memory export PATH` needs a file to write.")
+        try:
+            count = await pm.export(arg, allow_plaintext=args.yes_plaintext)
+        except PermissionError as exc:
+            raise CliError(f"{exc}. Add --yes-plaintext if that is what you want.") from exc
+        ui.success(f"Wrote {count} memories (all versions) to {arg}.")
+        ui.notice("That file is readable text, not encrypted. Keep it somewhere private.")
+    elif act == "stats":
+        s = await pm.stats()
+        ui.write()
+        ui.section("Memory")
+        ui.write(
+            f"   {ui.amber(str(s['active']))} active {ui.dim('·')} {s['pinned']} pinned"
+            f" {ui.dim('·')} {s['superseded']} replaced {ui.dim('·')} {s['archived']} archived"
+        )
+        types = ", ".join(f"{n} {t}" for t, n in sorted(s["by_type"].items())) or "none"
+        ui.write(f"   {ui.faint('by type  ')} {types}")
+        pending = s["events_not_yet_learned"]
+        ui.write(f"   {ui.faint('events   ')} {s['events']} recorded, {pending} not yet learned")
+        ui.write(f"   {ui.faint('index    ')} {s['indexed_vectors']} vectors")
+        ui.write()
+    elif act == "consolidate":
+        r = await pm.consolidate()
+        ui.success(f"{r.summarized} of {r.groups} weekly groups summarised.")
+        if r.rejected:
+            ui.notice("Rejected: " + ", ".join(f"{n} {why}" for why, n in r.rejected.items()))
+        if r.errors:
+            ui.error(f"{r.errors} groups failed (is the model running?); they will be retried.")
+    elif act == "prune":
+        r = await pm.prune(dry_run=args.dry_run)
+        verb = "Would archive" if args.dry_run else "Archived"
+        ui.success(
+            f"{verb} {len(r.archived)} of {r.examined} summarised memories ({r.kept} still useful)."
+        )
+    else:  # maintain
+        r = await pm.maintain(force=True)
+        ui.success(
+            f"{r.consolidation.summarized} summaries, {len(r.pruned.archived)} archived, "
+            f"{r.events_expired} old events removed."
+        )
+
+
 def cmd_memory(args: argparse.Namespace) -> int:
     home = home_dir()
     rt = open_runtime(home, unlock(home))
     ui = Console()
     try:
         store, act = rt.store, args.action
+        if act in CONTROL_ACTIONS:
+            pm = PersistentMemory(rt.vault, rt.store, rt.svc, rt.ingestor)
+            try:
+                asyncio.run(_controls(pm, ui, args))
+            except ValueError as exc:
+                raise CliError(str(exc)) from exc
+            return 0
         if act == "list":
-            ui.memories(store.list_memories(status=args.status, limit=args.limit))
+            ui.memories(
+                store.list_memories(status=args.status, memory_type=args.type, limit=args.limit)
+            )
         elif act == "search":
             ui.memories([h.memory for h in asyncio.run(rt.svc.recall(args.arg, k=8))])
         elif act in ("show", "history", "forget", "archive", "restore"):
@@ -329,11 +430,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     mem = sub.add_parser("memory", help="inspect and edit memories")
     mem.add_argument(
-        "action", choices=["list", "show", "search", "history", "forget", "archive", "restore"]
+        "action",
+        choices=[
+            "list",
+            "show",
+            "search",
+            "history",
+            "forget",
+            "archive",
+            "restore",
+            *CONTROL_ACTIONS,
+        ],
     )
-    mem.add_argument("arg", nargs="?", default="", help="memory number, or the search text")
+    mem.add_argument("arg", nargs="?", default="", help="memory number, search text, or file path")
     mem.add_argument("--status", default="active", choices=["active", "archived", "superseded"])
+    mem.add_argument(
+        "--type", default=None, help="only this kind: preference, semantic, summary..."
+    )
     mem.add_argument("--limit", type=int, default=50)
+    mem.add_argument("--text", default="", help="with `correct`: the right version of the fact")
+    mem.add_argument(
+        "--yes-plaintext", action="store_true", help="with `export`: I accept an unencrypted file"
+    )
+    mem.add_argument("--dry-run", action="store_true", help="with `prune`: show, don't archive")
     mem.set_defaults(run=cmd_memory)
 
     doctor = sub.add_parser("doctor", help="check the setup")

@@ -289,6 +289,15 @@ async def test_model_failures_store_nothing_and_the_next_run_retries(tmp_path, k
     await pm.close()
 
 
+def test_a_hyphenated_form_of_words_in_the_sources_is_not_invented():
+    source = "Started the 30 day flossing habit"
+    assert novel_terms("Started a 30-day flossing habit.", source) == []
+    assert novel_terms("Started a 60-day flossing habit.", source) == ["60-day"]
+    assert novel_terms("Started a 30-week habit.", source) == [
+        "30-week"
+    ]  # 'week' is not in the source
+
+
 def test_alphanumeric_words_are_one_word_on_both_sides():
     source = "Exported the mp3 files for sprint w3 and the B2B demo"
     assert novel_terms("Exported mp3 files for sprint w3 and the B2B demo.", source) == []

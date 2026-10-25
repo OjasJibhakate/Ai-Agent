@@ -38,6 +38,9 @@ class FakeGateway:
 
     async def chat_json(self, messages, schema, **kwargs):
         self.json_calls += 1
+        if "summary" in schema.get("properties", {}):  # a consolidation request
+            ids = [int(i) for i in re.findall(r"\[m:(\d+) ", messages[-1]["content"])]
+            return {"summary": "Worked with Priya on the budget.", "cited_ids": ids[:3]}
         return {"memories": []}
 
     async def warm_up(self):
@@ -211,3 +214,106 @@ def test_doctor_reports_unreachable_ollama(home, monkeypatch, capsys):
     monkeypatch.setenv("RAGNAROK_OLLAMA_URL", "http://127.0.0.1:9")
     assert cli.main(["doctor"]) == 1
     assert "not reachable" in capsys.readouterr().out
+
+
+# ---- the memory controls: pin, correct, revert, export, stats, tidy-up --------------------------
+
+
+def run_memory(monkeypatch, capsys, *argv):
+    passphrases(monkeypatch, PASSPHRASE)
+    code = cli.main(["memory", *argv])
+    out = capsys.readouterr()
+    return code, out.out, out.err
+
+
+def setup_controls(home, monkeypatch, capsys):
+    init_vault(monkeypatch, capsys)
+    monkeypatch.setattr(cli, "Gateway", FakeGateway)
+
+
+def test_pin_unpin_and_the_profile_marks_it(home, monkeypatch, capsys):
+    setup_controls(home, monkeypatch, capsys)
+    (mid,) = seed(home, ["Call me Sam"])
+    code, out, _ = run_memory(monkeypatch, capsys, "pin", str(mid))
+    assert code == 0 and "Pinned m1" in out
+    assert "pinned" in run_memory(monkeypatch, capsys, "show", str(mid))[1]
+    assert "Unpinned m1" in run_memory(monkeypatch, capsys, "unpin", str(mid))[1]
+    code, _, err = run_memory(monkeypatch, capsys, "pin", "x")
+    assert code == 2 and "needs a memory number" in err
+    code, _, err = run_memory(monkeypatch, capsys, "pin", "99")
+    assert code == 2 and "not active" in err
+
+
+def test_correct_revert_and_history(home, monkeypatch, capsys):
+    setup_controls(home, monkeypatch, capsys)
+    (old,) = seed(home, ["Gym day is Tuesday"])
+    code, _, err = run_memory(monkeypatch, capsys, "correct", str(old))
+    assert code == 2 and "needs the new text" in err
+    code, out, _ = run_memory(
+        monkeypatch, capsys, "correct", str(old), "--text", "Gym day is Thursday"
+    )
+    assert code == 0 and "Replaced m1 with m2" in out
+    hist = run_memory(monkeypatch, capsys, "history", "2")[1]
+    assert "Gym day is Thursday" in hist and "Gym day is Tuesday" in hist
+    code, out, _ = run_memory(monkeypatch, capsys, "revert", str(old))
+    assert code == 0 and "Brought back m1" in out and "m2 was archived" in out
+    listing = run_memory(monkeypatch, capsys, "list")[1]
+    assert "Gym day is Tuesday" in listing and "Thursday" not in listing
+    code, _, err = run_memory(monkeypatch, capsys, "revert", "2")
+    assert code == 2 and "replaced (superseded)" in err
+
+
+def test_export_needs_consent_and_writes_every_version(home, monkeypatch, capsys, tmp_path):
+    setup_controls(home, monkeypatch, capsys)
+    seed(home, ["Lives in Pune"])
+    target = tmp_path / "memories.jsonl"
+    code, _, err = run_memory(monkeypatch, capsys, "export", str(target))
+    assert code == 2 and "--yes-plaintext" in err and not target.exists()
+    code, out, _ = run_memory(monkeypatch, capsys, "export", str(target), "--yes-plaintext")
+    assert code == 0 and "not encrypted" in out
+    assert "Lives in Pune" in target.read_text(encoding="utf-8")
+    assert run_memory(monkeypatch, capsys, "export")[0] == 2  # no path given
+
+
+def test_stats_and_the_tidy_up_commands(home, monkeypatch, capsys):
+    setup_controls(home, monkeypatch, capsys)
+    seed(home, ["Prefers tea"])
+    code, out, _ = run_memory(monkeypatch, capsys, "stats")
+    assert code == 0 and "1" in out and "active" in out and "not yet learned" in out
+    code, out, _ = run_memory(monkeypatch, capsys, "consolidate")
+    assert code == 0 and "0 of 0 weekly groups summarised" in out
+    code, out, _ = run_memory(monkeypatch, capsys, "prune", "--dry-run")
+    assert code == 0 and "Would archive 0 of 0" in out
+    code, out, _ = run_memory(monkeypatch, capsys, "maintain")
+    assert code == 0 and "0 summaries" in out
+
+
+def test_consolidate_then_undo_summary_through_the_cli(home, monkeypatch, capsys):
+    import asyncio
+    from datetime import UTC, datetime, timedelta
+
+    setup_controls(home, monkeypatch, capsys)
+    key = keys.unlock_with_passphrase(home / "key.json", PASSPHRASE)
+    vault = Vault.open(home / "vault.db", key)
+    store = MemoryStore(vault)
+    store.start()
+    notes = ["Met Priya about the budget", "Priya sent the budget draft",
+             "Reviewed the budget with Priya", "Budget review moved to Friday"]  # fmt: skip
+    emb = FakeEmbedder()
+    base = datetime.now(UTC) - timedelta(days=40)
+    for i, t in enumerate(notes):
+        store.clock = lambda i=i: base + timedelta(hours=i)
+        store.add_memory(t, asyncio.run(emb.embed([t]))[0], memory_type="episodic", source="test")
+    vault.close()
+
+    code, out, _ = run_memory(monkeypatch, capsys, "consolidate")
+    assert code == 0 and "1 of 1 weekly groups summarised" in out
+    listing = run_memory(monkeypatch, capsys, "list", "--type", "summary")[1]
+    assert "Worked with Priya on the budget." in listing and "summary" in listing
+    code, out, _ = run_memory(monkeypatch, capsys, "undo-summary", "5")
+    assert code == 0 and "Removed summary m5" in out
+    assert (
+        "Worked with Priya" not in run_memory(monkeypatch, capsys, "list", "--type", "summary")[1]
+    )
+    code, _, err = run_memory(monkeypatch, capsys, "undo-summary", "1")
+    assert code == 2 and "not a summary" in err

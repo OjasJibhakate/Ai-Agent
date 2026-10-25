@@ -58,7 +58,8 @@ class ConsolidationReport:
 
 
 def _tokens(text: str) -> set[str]:
-    return {t.lower().strip(".,:;/-'") for t in _TOKEN.findall(text)}
+    words = {t.lower().strip(".,:;/-'") for t in _TOKEN.findall(text)}
+    return words | {part for w in words for part in w.split("-") if part}
 
 
 def novel_terms(summary: str, source_text: str) -> list[str]:
@@ -73,7 +74,8 @@ def novel_terms(summary: str, source_text: str) -> list[str]:
             cleaned = tok.lower().strip(".,:;/-'")
             if cleaned.endswith("'s"):
                 cleaned = cleaned[:-2]
-            if cleaned not in known:
+            parts = [p for p in cleaned.split("-") if p]  # "30-day" is fine if "30" and "day" are
+            if cleaned not in known and not (len(parts) > 1 and all(p in known for p in parts)):
                 novel.append(tok.strip(".,:;/-'"))
     return novel
 

@@ -11,7 +11,7 @@ Project rules for contributors and coding agents: [`AGENTS.md`](AGENTS.md).
 
 Target machine: HP OMEN 16, i5-13420H, 16 GB RAM, RTX 4050 6 GB, Windows 11, no WSL or Docker.
 
-*Last updated: 2026-10-25 19:00 IST (UTC+05:30).*
+*Last updated: 2026-10-25 19:55 IST (UTC+05:30).*
 
 ---
 
@@ -30,6 +30,9 @@ uv run python -m ragnarok chat     # talk to it: "remember that ...", "open stea
 Inside `chat`: `/memories` lists what it remembers, `/profile` shows what is always in its prompt, `/forget N` deletes a memory,
 `/clear` clears the screen, `/quit` leaves. It learns from the chat while you are idle and finishes next time, so leaving is instant. Other commands: `memory list|search|show|history|forget|archive|restore`,
 `ingest`, and `doctor` (checks local-only mode, models, GPU and encryption).
+Controls: `memory pin|unpin N`, `memory correct N --text "the right fact"`, `memory revert N` (bring an older version back), `memory history N`,
+`memory stats`, `memory consolidate`, `memory prune --dry-run`, `memory maintain`, `memory undo-summary N`, and
+`memory export FILE --yes-plaintext` (that file is not encrypted). Run them as `uv run python -m ragnarok memory ...`.
 
 The models do not run "in" the terminal: they run in the Ollama background process on your GPU, and the terminal is the chat window.
 
@@ -60,16 +63,19 @@ Times are commit times (IST). Details and numbers for each line are in the work 
 | 2026-10-25 18:07 | Terminal CLI: `init`, `chat`, `memory ...`, `ingest`, `doctor` | `c14915b` |
 | 2026-10-25 18:19 | First real run on the owner's laptop found the agent could not "open steam"; added the `open_app` skill (Start menu apps, shells refused), an honesty rule, and passphrase retries | `b61a218` |
 | 2026-10-25 18:33 | Colour terminal screen (welcome box, spinner, footer), background learning, and faster tool turns: remembering a fact 3.9 s to 1.6 s, opening an app 2.2 s to 1.1 s | `ec7a795` |
+| 2026-10-25 18:50 | Read-only file skill: find, list and read files in Desktop, Documents and Downloads (OneDrive copies included); secrets and anything outside those folders refused | `29492da` |
+| 2026-10-25 18:53 | `persistent_memory.py`: the whole memory lifecycle in one file, plus correct, revert, pin, export and stats | `3306cfb` |
+| 2026-10-25 19:39 | **M5** Weekly summaries (validated model output), forgetting by usefulness, delete cascade, undo, daily maintenance | `1eda367` |
+| 2026-10-25 19:55 | CLI controls for all of it (`memory pin\|correct\|revert\|export\|stats\|consolidate\|prune\|maintain\|undo-summary`) and idle-time maintenance in the chat | latest commit |
 
-
-193 tests pass and `ruff` is clean as of the last commit.
+283 tests pass and `ruff` is clean as of the last commit.
 
 ### Remaining
 
 | Item | Milestone | Status |
 |---|---|---|
-| First real run on the owner's laptop: `init` with their passphrase, then a few days of use | M4 follow-up | **next, needs you** |
-| Consolidation (summaries), forgetting by usefulness, "undo supersede", pin from the CLI | M5 | not started |
+| Use it for a few days (`memory stats` shows what it is learning). Consolidation has not run on a real vault yet: it needs finished weeks with at least four notes each | follow-up | **next, needs you** |
+| Summaries grouped by entity (today: by project and week); an export encrypted with a passphrase | M5 follow-up | not started |
 | A held-out evaluation set (the prompts were tuned on the current small one); final numbers for the README | M6 | not started |
 | Paraphrased questions are the weak spot of retrieval (recall@5 about 0.77) | M6 | idea: query expansion or question-style embeddings |
 | Skills registry and sandbox (FR2) | pillar | design only |
@@ -116,6 +122,8 @@ uv run python -m bench.embed_bench
 uv run python -m bench.llm_bench
 uv run python -m bench.retrieval_bench    # writes bench/results/retrieval_<date>.json
 uv run python -m bench.ingest_eval        # real-model extraction and decision quality
+uv run python -m bench.consolidate_eval   # real-model weekly summaries and their validation
+uv run python -m bench.chat_latency       # how long each kind of chat turn takes
 uv run python -m bench.m4_demo            # end-to-end: tell it facts, restart, come back
 ```
 
@@ -130,11 +138,12 @@ ragnarok/
   cli.py         terminal front end (init, chat, memory, ingest, doctor)
   memory/        vault.py (SQLCipher, migrations)  store.py (write, search)  ingest.py (events -> memories)
                  profile.py (always-on block)  service.py (async)  index.py (exact, Turbovec)
+                 consolidate.py (weekly summaries)  forget.py (usefulness, pruning)
   persistent_memory.py   the whole memory lifecycle in one readable file (start here)
   vault/         keys.py (passphrase, recovery code, DPAPI)
   runtime/       gateway.py (the only path to a model)  loop.py (agent loop)  context.py  tools.py  prompts/
   policy/        permissions.py (every tool call is checked here)
-bench/           embed_bench  llm_bench  retrieval_bench  ingest_eval  m4_demo
+bench/           embed_bench  llm_bench  retrieval_bench  ingest_eval  consolidate_eval  chat_latency  m4_demo
 tests/           one file per milestone
 docs/            MEMORY.md  DECISIONS.md  WORKLOG.md  history/
 ```

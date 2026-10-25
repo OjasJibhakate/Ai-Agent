@@ -15,7 +15,7 @@ Ragnarok is a local, always-on personal agent for the IIIT hackathon. Every mode
 **Focus: the five pillars the PDF stresses.** These are **skills (FR2), planning (FR3), triggers (FR4), encryption (NFR1.2),
 and recovery (NFR3)**. Memory, UI, and everything else exist to support them. When in doubt, spend the time on a pillar.
 
-**Current stage:** memory milestones M0-M4 done: encrypted vault, keys, extraction, profile, tools, chat loop, CLI (`ragnarok/`). Other pillars are design only.
+**Current stage:** memory milestones M0-M5 done (vault, keys, extraction, retrieval, summaries, forgetting, controls, chat loop, CLI, app and file skills; see `ragnarok/persistent_memory.py`). Other pillars are design only.
 
 ## Hard rules (never break)
 

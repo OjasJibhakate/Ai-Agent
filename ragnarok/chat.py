@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Protocol
 
 import httpx
@@ -45,9 +45,15 @@ class BackgroundLearner:
     event twice is recognised and reinforced instead of duplicated.
     """
 
-    def __init__(self, ingestor: Ingestor, delay: float) -> None:
+    def __init__(
+        self,
+        ingestor: Ingestor,
+        delay: float,
+        maintenance: Callable[[], Awaitable[object]] | None = None,
+    ) -> None:
         self.ingestor = ingestor
         self.delay = delay
+        self.maintenance = maintenance  # tidy-up (summaries, pruning); decides itself if it is due
         self._task: asyncio.Task | None = None
         self.runs = 0
 
@@ -57,6 +63,9 @@ class BackgroundLearner:
     async def _run(self) -> None:
         await asyncio.sleep(self.delay)
         await self.ingestor.ingest_pending()
+        if self.maintenance is not None:
+            with contextlib.suppress(Exception):  # tidying must never disturb the chat
+                await self.maintenance()
         self.runs += 1
 
     async def cancel(self) -> None:
@@ -91,6 +100,7 @@ class ChatApp:
         approve_line: Callable[[str], str] | None = None,
         tools: list[Tool] | None = None,
         learn_delay: float | None = None,
+        maintenance: Callable[[], Awaitable[object]] | None = None,
     ) -> None:
         self.rt = rt
         self.c = console
@@ -105,7 +115,9 @@ class ChatApp:
         )
         self.session = Session()
         self.learner = BackgroundLearner(
-            rt.ingestor, LEARN_AFTER_SECONDS if learn_delay is None else learn_delay
+            rt.ingestor,
+            LEARN_AFTER_SECONDS if learn_delay is None else learn_delay,
+            maintenance,
         )
         self._background: list[asyncio.Task] = []
 

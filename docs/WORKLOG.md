@@ -421,3 +421,27 @@ M5: consolidation, forgetting, undo for a wrong supersede, pin/unpin and export 
   export refuses without consent and writes every version; secrets are scrubbed before storage.
 - Two test mistakes of mine fixed on the way (the fake embedder cannot match "live" to "lives"; "Likes tea" is itself a preference). No code bugs found.
 - Not done: CLI commands for correct/revert/pin/export, forgetting by usefulness, summaries.
+
+## 2026-10-25 (night) - M5: consolidation, forgetting, delete cascade, controls
+
+### Done (D-033)
+- `memory/consolidate.py`, `memory/forget.py`, the delete cascade in `store.delete`, `PersistentMemory.consolidate/prune/undo_summary/maintain`, migration 0004 (`meta`), CLI controls, idle maintenance in the chat.
+- Tests: **283 pass**. `tests/test_m5_tidy.py` (24 cases): the usefulness formula; prune never touches pinned, uncovered, important, recently used or summary memories, and is safe to repeat and to dry-run;
+  grouping by project and week and the "week still filling" rule; a summary keeps provenance and leaves sources untouched; second run does nothing; the per-call limit; seven kinds of bad summary rejected with nothing stored;
+  model failure retried next run; deleting a source removes the summary, its search entries, vector, links and index entry and leaves only id tombstones (the spec's deletion check); undo restores what pruning hid;
+  maintenance once a day; and a six-week story where weekly notes shrink to summaries while a stated preference and yesterday's note stay.
+
+### Found by tests and the real model
+- **Tokenizer mismatch (real bug):** the novelty check tokenized the summary and its sources differently, so an ordinary identifier like `w0` was flagged as an invented number. It failed safe (rejected a good summary), but would have
+  quietly crippled consolidation on real notes. One tokenizer now; words containing digits (`mp4`) are checked as well.
+- **Identical summaries merge:** two weeks with the same summary sentence collapsed into one summary through the duplicate rule. Kept as is and documented (D-033).
+- **Real model, 4 hand-written weeks (`bench/consolidate_eval.py`):** first run 3/4 accepted. The rejected summary said "30-day" where the note said "30 day" (a false rejection, safe but too strict). Hyphenated forms of words that are in the sources are now accepted;
+  second run 4/4. **Caveat:** I changed the validator after seeing that case, on a set I wrote, so 4/4 shows the pipeline works, not how often real notes will pass. Accepted summaries read well and name only people, places and facts from the notes.
+
+### Not done / not verified
+- Consolidation has not run on the owner's real vault (it has only a few days of notes; the rule needs finished weeks of at least four notes each).
+- Grouping by entity, and an "export encrypted with a passphrase" option.
+- Whether weekly summaries lose details people care about: needs real use.
+
+### Next
+Use it for a few days (`memory stats` shows what is happening); then a held-out evaluation set for extraction and retrieval.

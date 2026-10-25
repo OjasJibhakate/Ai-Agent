@@ -1,0 +1,30 @@
+[
+  {
+    "summary": "The user visited a dentist for a routine cleaning, purchased new dental hygiene tools, and established a 30-day flossing habit, resulting in the dentist confirming their gums are healthy.",
+    "cited": 4,
+    "of": 4,
+    "rejected": null,
+    "novel": []
+  },
+  {
+    "summary": "The user discovered that the refund calculator used floor instead of round half up, fixed the issue, and successfully deployed the corrected code to staging after all tests passed.",
+    "cited": 5,
+    "of": 5,
+    "rejected": null,
+    "novel": []
+  },
+  {
+    "summary": "The user booked a trip to Goa, rented a scooter there, and packed their camera and blue backpack for the journey.",
+    "cited": 4,
+    "of": 4,
+    "rejected": null,
+    "novel": []
+  },
+  {
+    "summary": "The user met Priya to plan the budget for the payments project, reviewed and requested cuts in her draft, and received approval for the revised version.",
+    "cited": 5,
+    "of": 5,
+    "rejected": null,
+    "novel": []
+  }
+]

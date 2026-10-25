@@ -328,3 +328,21 @@ Format: context → decision → alternatives → consequences → revisit if.
   New store primitives behind it: `set_pinned`, `revert` (only the fact directly before the current one can come back, so there is never more than one active version; the newer one is archived, not deleted) and `stats`.
   `export` writes unencrypted JSON lines and refuses unless the caller passes `allow_plaintext=True`.
 - **Consequences:** Delivers the user-control part of M5 at the API level (correct, revert, pin, export). Not yet wired into the CLI commands. Automatic forgetting and summaries are still open.
+
+### D-033 — M5: consolidation, forgetting by usefulness, and the delete cascade
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Context:** Memory has to stay useful after months, not just days: raw episodic notes pile up, and the PDF requires both consolidation (FR1.3) and permanent deletion (NFR4.2) that really removes everything derived from a fact.
+- **Decision:**
+  - **Consolidation** (`memory/consolidate.py`): each finished week (at least 7 days old, at least 4 notes) of uncovered episodic memories per project is summarised by the local model. The summary is a *proposal*:
+    code stores it only if it cites at least two memories that are really in the group, is under 400 characters, and contains no name, number or digit-bearing word (`mp4`, `w3`) that the cited memories do not contain
+    (hyphenated forms such as "30-day" are fine when every part appears). A stored summary is an ordinary memory of type `summary`, origin `inferred`, confidence no higher than its lowest source, importance the highest,
+    linked `derived_from` to each source. The sources are not modified. One transaction per summary, so a crash or a failed model call loses nothing and the next run retries. At most 5 summaries per call.
+  - **Forgetting** (`memory/forget.py`): usefulness = 0.35 importance + 0.25 recency (30-day half-life) + 0.25 use (relative to the most used memory) + 0.15 confidence. A memory is archived only if it is active, unpinned,
+    not a summary, below 0.35, **and already covered by an active summary**. Nothing is archived just for being old; stated preferences and facts, which are never summarised, stay forever.
+  - **Delete cascade:** deleting a memory also deletes every summary built from it (a summary can repeat its content) in the same transaction, with content-free tombstones for each. The surviving sources become eligible
+    for a fresh summary. `undo_summary` deletes a summary and un-archives what pruning had hidden.
+  - **Maintenance** (`PersistentMemory.maintain`): consolidate, prune and expire old raw events, at most once a day (state in a new `meta` table, migration 0004). The chat runs it in idle time after learning, and it is
+    cancelled the moment the user types. Errors there never reach the chat.
+  - **CLI:** `memory pin|unpin|correct|revert|export|stats|consolidate|prune|maintain|undo-summary`, `memory list --type`. Export needs `--yes-plaintext`.
+- **Consequences:** Identical summary text from two weeks is merged into one summary by the duplicate rule (the second week's sources attach to it). Grouping is by project and week, not by entity.
+- **Revisit if:** real use shows summaries lose too much, or weekly grouping is too coarse (try per-entity groups).

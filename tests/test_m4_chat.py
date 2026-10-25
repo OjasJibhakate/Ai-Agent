@@ -265,3 +265,27 @@ async def test_gpu_status_variants(monkeypatch):
     assert await gpu_status("http://x") == "loading"
     monkeypatch.setattr(chat_mod.httpx, "AsyncClient", real)
     assert await gpu_status("http://127.0.0.1:9") == "offline"
+
+
+async def test_maintenance_runs_after_learning_and_its_failures_stay_quiet():
+    calls = []
+
+    class Ing:
+        async def ingest_pending(self, limit=40):
+            calls.append("learn")
+
+    async def maintenance():
+        calls.append("maintain")
+
+    learner = BackgroundLearner(Ing(), delay=0.01, maintenance=maintenance)
+    learner.schedule()
+    await asyncio.sleep(0.15)
+    assert calls == ["learn", "maintain"] and learner.runs == 1
+
+    async def broken():
+        raise RuntimeError("model down")
+
+    failing = BackgroundLearner(Ing(), delay=0.01, maintenance=broken)
+    failing.schedule()
+    await asyncio.sleep(0.15)
+    assert failing.runs == 1  # the chat was never disturbed
