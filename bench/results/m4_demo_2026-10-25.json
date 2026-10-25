@@ -2,71 +2,77 @@
   "turns": [
     {
       "you": "Hi! Please remember that I prefer meetings after 2pm.",
-      "ai": "Got it! I'll keep that in mind.",
+      "ai": "Saved: User prefers meetings after 2pm [m:1]",
       "tools": [
         "memory_save({\"content\": \"User prefers meetings after 2pm\", \"memory_type\": \"preference\"})"
       ],
-      "recall_ms": 72.58720000027097,
-      "first_token_ms": 186.99999999989814,
-      "total_ms": 2378.945599999952,
+      "recall_ms": 81.42779999980121,
+      "first_token_ms": null,
+      "total_ms": 1713.2944999993924,
       "ok": null
     },
     {
       "you": "My manager is Ravi and we have a one on one every Monday at 11.",
-      "ai": "I've noted that your manager is Ravi and you have a one-on-one every Monday at 11 AM.",
+      "ai": "Saved: User's manager is Ravi, with weekly one-on-ones every Monday at 11 AM. [m:2]",
       "tools": [
-        "memory_save({\"content\": \"User's manager is Ravi, with weekly one-on-ones on Mondays at 11 AM.\", \"memory_type\": \"episodic\"})"
+        "memory_save({\"content\": \"User's manager is Ravi, with weekly one-on-ones every Monday at 11 AM.\", \"memory_type\": \"episodic\"})"
       ],
-      "recall_ms": 62.44379999998273,
-      "first_token_ms": 313.00000000010186,
-      "total_ms": 3998.665699999947,
+      "recall_ms": 63.30249999973603,
+      "first_token_ms": null,
+      "total_ms": 2730.3782999997566,
       "ok": null
     },
     {
       "you": "Thanks, that's all for now.",
-      "ai": "You're welcome! Let me know if you need anything else.",
-      "tools": [],
-      "recall_ms": 63.25599999991027,
-      "first_token_ms": 202.99999999997453,
-      "total_ms": 577.6538000000073,
+      "ai": "You're welcome! Is there anything else I can help you with?",
+      "tools": [
+        "memory_search({\"query\": \"Ravi Monday meetings\"})"
+      ],
+      "recall_ms": 101.55589999976655,
+      "first_token_ms": 219.00000000005093,
+      "total_ms": 1637.253399999281,
       "ok": null
     },
     {
       "you": "When should we schedule the team retro?",
-      "ai": "Based on your manager's schedule, Monday at 11 AM is taken for your one-on-one. Since you prefer meetings after 2 PM, I'd suggest scheduling the team retro on a Tuesday or later, ideally between 2 PM and 4 PM to avoid conflicts with your existing commitments.",
-      "tools": [],
-      "recall_ms": 71.71969999990324,
-      "first_token_ms": 422.00000000002547,
-      "total_ms": 1769.2620000002535,
+      "ai": "Since you prefer meetings after 2pm, we could schedule the team retro then. How about Wednesday or Thursday afternoon?",
+      "tools": [
+        "memory_search({\"query\": \"team retro scheduling preference\"})"
+      ],
+      "recall_ms": 61.9685000001482,
+      "first_token_ms": 217.9999999998472,
+      "total_ms": 1989.9444000002404,
       "ok": true
     },
     {
       "you": "Who is my manager?",
-      "ai": "Your manager is Ravi. He has weekly one-on-one meetings scheduled for you on Mondays at 11 AM.",
-      "tools": [],
-      "recall_ms": 57.191299999885814,
-      "first_token_ms": 327.99999999997453,
-      "total_ms": 902.0393999999214,
+      "ai": "Your manager is Ravi. You have weekly one-on-ones with him every Monday at 11 AM.",
+      "tools": [
+        "memory_search({\"query\": \"manager name\", \"memory_type\": \"episodic\"})"
+      ],
+      "recall_ms": 100.6995999996434,
+      "first_token_ms": 219.00000000005093,
+      "total_ms": 2145.1999000000797,
       "ok": true
     },
     {
       "you": "Actually, I prefer meetings after 3pm from now on.",
-      "ai": "I've updated your preference to meetings after 3 PM. So for the team retro, we should schedule it on a Tuesday or later, ideally between 3 PM and 4 PM.",
+      "ai": "Updated: User prefers meetings after 3pm [m:3] (replaces the older version)",
       "tools": [
-        "memory_save({\"content\": \"User prefers meetings after 3 PM\", \"memory_type\": \"preference\"})"
+        "memory_save({\"content\": \"User prefers meetings after 3pm\", \"memory_type\": \"preference\"})"
       ],
-      "recall_ms": 82.45790000000852,
-      "first_token_ms": 297.00000000002547,
-      "total_ms": 4083.6138999998184,
+      "recall_ms": 74.88250000005792,
+      "first_token_ms": null,
+      "total_ms": 2725.4327999999077,
       "ok": null
     },
     {
       "you": "What time do I prefer for meetings?",
-      "ai": "You prefer meetings after 3 PM.",
+      "ai": "You prefer meetings after 3pm.",
       "tools": [],
-      "recall_ms": 77.4200999999266,
-      "first_token_ms": 391.0000000000764,
-      "total_ms": 662.3069000002033,
+      "recall_ms": 60.16470000031404,
+      "first_token_ms": 422.0000000004802,
+      "total_ms": 670.9540000001653,
       "ok": true
     }
   ],

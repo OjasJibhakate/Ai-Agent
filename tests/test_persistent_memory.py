@@ -199,6 +199,7 @@ def test_the_file_explains_itself():
         "READING",
         "CHANGING YOUR MIND",
         "DURABILITY",
-        "NOT BUILT YET",
+        "KEEPING IT TIDY",
+        "LIMITS",
     ):
         assert section in doc

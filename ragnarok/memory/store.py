@@ -220,6 +220,7 @@ class MemoryStore:
         tags: Sequence[str] = (),
         event_ids: Sequence[int] = (),
         supersedes: int | None = None,
+        confidence: float | None = None,
     ) -> int:
         """Store a memory and its vector. An identical active memory is returned, not duplicated.
 
@@ -254,7 +255,9 @@ class MemoryStore:
                     content,
                     memory_type,
                     origin,
-                    BASE_CONFIDENCE[origin],
+                    BASE_CONFIDENCE[origin]
+                    if confidence is None
+                    else min(confidence, BASE_CONFIDENCE[origin]),
                     importance,
                     source,
                     project_id,
@@ -440,21 +443,35 @@ class MemoryStore:
     def delete(self, memory_id: int) -> bool:
         """Hard delete (NFR4.2): row, FTS entry, embedding, tags, links, provenance, index entry.
 
-        Leaves a content-free tombstone (id and time only). `secure_delete` overwrites the pages.
+        Summaries built from this memory may repeat its content, so they are deleted in the same
+        transaction (the memories that remain become eligible for a fresh summary).
+        Leaves content-free tombstones (id and time only). `secure_delete` overwrites the pages.
         """
         now = self._now()
         with self.vault.transaction() as con:
+            summaries = [
+                r[0]
+                for r in con.execute(
+                    "SELECT l.from_id FROM memory_links l JOIN memories s ON s.id = l.from_id"
+                    " WHERE l.to_id = ? AND l.relation = 'derived_from'"
+                    " AND s.memory_type = 'summary'",
+                    (memory_id,),
+                ).fetchall()
+            ]
             deleted = con.execute("DELETE FROM memories WHERE id = ?", (memory_id,)).rowcount
             if not deleted:
                 return False
-            con.execute(
-                "INSERT INTO audit_log(ts, action, ref_id) VALUES (?, 'memory_deleted', ?)",
-                (now, memory_id),
-            )
-            con.execute(
-                "INSERT INTO index_outbox(op, memory_id, created_at) VALUES ('remove', ?, ?)",
-                (memory_id, now),
-            )
+            for gone in [memory_id, *summaries]:
+                if gone != memory_id:
+                    con.execute("DELETE FROM memories WHERE id = ?", (gone,))
+                con.execute(
+                    "INSERT INTO audit_log(ts, action, ref_id) VALUES (?, 'memory_deleted', ?)",
+                    (now, gone),
+                )
+                con.execute(
+                    "INSERT INTO index_outbox(op, memory_id, created_at) VALUES ('remove', ?, ?)",
+                    (gone, now),
+                )
         self._apply_pending()
         return True
 
@@ -540,6 +557,53 @@ class MemoryStore:
 
     def count(self, status: str = "active") -> int:
         return self.vault.query("SELECT count(*) FROM memories WHERE status = ?", (status,))[0][0]
+
+    def now_iso(self) -> str:
+        return self._now()
+
+    def meta_get(self, key: str) -> str | None:
+        rows = self.vault.query("SELECT value FROM meta WHERE key = ?", (key,))
+        return rows[0][0] if rows else None
+
+    def meta_set(self, key: str, value: str) -> None:
+        with self.vault.transaction() as con:
+            con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", (key, value))
+
+    def covered_ids(self) -> set[int]:
+        """Memories that an active summary was built from."""
+        rows = self.vault.query(
+            "SELECT DISTINCT l.to_id FROM memory_links l JOIN memories s ON s.id = l.from_id"
+            " WHERE l.relation = 'derived_from' AND s.memory_type = 'summary'"
+            " AND s.status = 'active'"
+        )
+        return {r[0] for r in rows}
+
+    def sources_of(self, summary_id: int) -> list[int]:
+        rows = self.vault.query(
+            "SELECT to_id FROM memory_links WHERE from_id = ? AND relation = 'derived_from'"
+            " ORDER BY to_id",
+            (summary_id,),
+        )
+        return [r[0] for r in rows]
+
+    def entities_of_memory(self, memory_id: int) -> list[tuple[str, str]]:
+        rows = self.vault.query(
+            "SELECT e.name, e.kind FROM memory_entities me JOIN entities e ON e.id = me.entity_id"
+            " WHERE me.memory_id = ?",
+            (memory_id,),
+        )
+        return [(r[0], r[1]) for r in rows]
+
+    def project_name(self, project_id: int | None) -> str | None:
+        if project_id is None:
+            return None
+        rows = self.vault.query("SELECT name FROM projects WHERE id = ?", (project_id,))
+        return rows[0][0] if rows else None
+
+    def max_access_count(self) -> int:
+        return self.vault.query(
+            "SELECT coalesce(max(access_count), 0) FROM memories WHERE status = 'active'"
+        )[0][0]
 
     def version(self) -> tuple:
         """Changes whenever memories are added, removed, re-pinned, or change status."""

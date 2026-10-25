@@ -46,7 +46,17 @@ DURABILITY
   derived data: changes are queued in an outbox inside the same transaction, applied afterwards,
   and on start the saved index is loaded, replayed and checked against the vault, or rebuilt.
 
-NOT BUILT YET  automatic forgetting by usefulness, and summaries of old memories (consolidation).
+KEEPING IT TIDY  consolidate(), prune(), maintain()
+  consolidate() turns each finished week of small episodic notes into one summary memory. The model
+  proposes it; code stores it only if it cites real sources and invents no names or numbers. The
+  sources are untouched, so undo_summary() takes it back. prune() archives memories that are both
+  low in usefulness (importance, recency, how often used, confidence) and already covered by a
+  summary; pinned memories, summaries and anything without a summary are never pruned. maintain()
+  runs both, plus expiry of old raw events, at most once a day. Deleting a memory also deletes any
+  summary built from it.
+
+LIMITS  Summaries group by project and week only (not by entity). Export is plain text. Nothing is
+        ever archived just for being old.
 
 Measured numbers for all of this are in docs/WORKLOG.md; the reasons for each rule are in
 docs/DECISIONS.md.
@@ -56,10 +66,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ragnarok.memory.consolidate import ConsolidationReport, Consolidator
+from ragnarok.memory.forget import PruneReport, prune
 from ragnarok.memory.ingest import Embedder, GatewayLlm, Ingestor, IngestReport, JsonLlm
 from ragnarok.memory.models import Memory, MemoryHit, MemoryType
 from ragnarok.memory.profile import ProfileCache
@@ -73,6 +86,17 @@ from ragnarok.runtime.gateway import Gateway
 class Remembered:
     action: str  # ADD, UPDATE, SUPERSEDE or NOOP
     memory_id: int
+
+
+MAINTENANCE_INTERVAL_S = 24 * 3600
+
+
+@dataclass
+class MaintenanceReport:
+    skipped: bool = False  # ran less than a day ago
+    consolidation: ConsolidationReport = field(default_factory=ConsolidationReport)
+    pruned: PruneReport = field(default_factory=PruneReport)
+    events_expired: int = 0
 
 
 class PersistentMemory:
@@ -258,6 +282,49 @@ class PersistentMemory:
             row["entities"] = [r[0] for r in entities]
             out.append(row)
         return sorted(out, key=lambda r: r["id"])
+
+    # ---- keeping it tidy ---------------------------------------------------------------------
+
+    async def consolidate(self, limit: int = 5, **options: Any) -> ConsolidationReport:
+        """Summarise finished weeks of episodic notes (at most `limit` summaries per call)."""
+        consolidator = Consolidator(self.store, self.service.embedder, self.ingestor.llm, **options)
+        return await consolidator.run(limit)
+
+    async def prune(self, *, threshold: float | None = None, dry_run: bool = False) -> PruneReport:
+        """Archive low-usefulness memories that a summary already covers."""
+        kwargs: dict[str, Any] = {"dry_run": dry_run}
+        if threshold is not None:
+            kwargs["threshold"] = threshold
+        return await asyncio.to_thread(prune, self.store, **kwargs)
+
+    async def undo_summary(self, summary_id: int) -> list[int]:
+        """Take a summary back: delete it and un-archive the memories it had let go of."""
+        summary = await self.get(summary_id)
+        if summary is None or summary.memory_type != "summary":
+            raise ValueError(f"memory {summary_id} is not a summary")
+        restored = []
+        for source_id in await asyncio.to_thread(self.store.sources_of, summary_id):
+            source = await self.get(source_id)
+            if source is not None and source.status == "archived":
+                await self.restore(source_id)
+                restored.append(source_id)
+        await self.forget(summary_id)
+        return restored
+
+    async def maintain(self, *, force: bool = False) -> MaintenanceReport:
+        """Consolidate, prune and expire old events; at most once a day unless forced."""
+        now = await asyncio.to_thread(self.store.now_iso)
+        last = await asyncio.to_thread(self.store.meta_get, "last_maintenance")
+        if not force and last:
+            gap = (datetime.fromisoformat(now) - datetime.fromisoformat(last)).total_seconds()
+            if gap < MAINTENANCE_INTERVAL_S:
+                return MaintenanceReport(skipped=True)
+        report = MaintenanceReport()
+        report.consolidation = await self.consolidate()
+        report.pruned = await self.prune()
+        report.events_expired = await asyncio.to_thread(self.store.expire_events)
+        await asyncio.to_thread(self.store.meta_set, "last_maintenance", now)
+        return report
 
     # ---- lifecycle ---------------------------------------------------------------------------
 

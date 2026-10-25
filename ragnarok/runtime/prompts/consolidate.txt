@@ -1,0 +1,11 @@
+Task: write one short summary of these related memories.
+
+Rules:
+- Use only what the memories say. Do not add names, numbers, dates or facts that are not in them.
+- Keep the people, projects and places that matter and the main outcome. Leave out small details.
+- At most two sentences, written as plain statements about the user.
+- In cited_ids list the ids of the memories your summary is based on (at least two).
+
+<memories>
+{memories}
+</memories>
