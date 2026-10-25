@@ -206,3 +206,52 @@ D-020 (store the Turbovec index as bytes inside the vault) and D-021 (start Olla
 2. `bench/embed_bench.py` (dimension, latency) and `bench/llm_bench.py` (tok/s, first token, `think: false`).
 3. M2: `remember` / `recall` with FTS5 + Turbovec + RRF + rerank, with the restart test.
 4. Ask the team before adding key-wrapping dependencies (D-022).
+
+## 2026-10-25 (late night) - M2 core, gateway, first model benches
+
+### Done
+- `ragnarok/memory/index.py`: `VectorIndex` interface with `ExactIndex` (numpy) and `TurbovecIndex` (4-bit, serializable). Both unit-normalise.
+  Turbovec raises on duplicate ids and on an empty allowlist, so the wrapper replaces on re-add and returns `[]` on an empty allowlist.
+- `ragnarok/memory/store.py` (sync core) and `service.py` (async): `add_memory` with content-hash dedupe, origin-based confidence, entities, tags,
+  provenance, and the outbox; hybrid `search` = FTS5 (OR of quoted tokens, stopwords dropped) + vector -> RRF (k=60) -> rerank
+  (importance, entity overlap, project, recency, confidence) -> verify against SQLite (active only, `secret` hidden).
+  If the embedder is down, `recall` returns lexical-only results.
+- `ragnarok/runtime/gateway.py`: loopback-only, rejects `-cloud` models, `embed()` and streaming `chat_stream()` with a fixed `num_ctx` 16384 and `keep_alive -1`.
+- Migration 0002 and the restart/replay design: D-023. Async test hook: D-024.
+- Tests: **52 pass** (`tests/test_m2_memory.py` adds 26 cases across both index kinds: restart, checkpoint + replay, corrupt blob,
+  lost outbox, archived/secret never surface, embedder down, ranking effects). `ruff check` and `ruff format --check` clean.
+  These use a hashed bag-of-words fake embedder, so they prove the plumbing, **not retrieval quality**.
+
+### Measured on this laptop (Ollama 0.40.11, RTX 4050 6 GB, both models loaded)
+| Item | Result |
+|---|---|
+| `nomic-embed-text` | 768-d, `100% GPU`, 335 MB |
+| Embed one query | p50 81 ms, p95 121 ms, max 225 ms (60 calls); cold first call 185 ms |
+| Embed batch of 64 | 1.63 s total, 25.5 ms each |
+| `qwen3.5:4b` | `100% GPU` (3.36 GB) at `num_ctx` 16384, runner llamacpp, `UNTIL Forever` |
+| Decode speed | 48.8 tok/s median (48.4-49.1), within the 40-55 estimate |
+| First token, same prefix | median 142 ms (128-160) for a ~565-token prompt |
+| First token, changed suffix | 363 ms (one run) |
+| `think: false` | honored (0 thinking chars); `think: true` produced 4,322 thinking chars and hit the 1,024-token cap |
+| Cold load | Ollama `load_duration` 5.1 s, but **first token arrived after 54.6 s** |
+
+### Findings and open issues
+- **Query embedding is ~80 ms, not the 10-40 ms estimated.** It is still far inside the 800 ms retrieval budget, but the ARCHITECTURE figure should be
+  corrected once we see whether it is HTTP overhead or GPU time.
+- **Slow first request after a cold load.** The very first embed call took 54.6 s while a download ran in parallel (later 185 ms). For the chat model,
+  the first request after `ollama stop` took 54.6 s to first token despite a 5.1 s reported load; my first attempt hit the client's 60 s timeout.
+  I have not found the cause (not investigated yet). Practical rule for now: warm both models at daemon start, never on a user's first message,
+  and use a long timeout for the warm-up call. After a reboot, expect about a minute before the first answer.
+- The "prompt tokens" figure Ollama reports is the whole prompt, so it can't show cache hits; the 142 ms vs 363 ms first-token gap is the evidence of prefix reuse.
+- A background `ollama pull` started from a tool shell is killed when that shell exits; start pulls with a detached process.
+- A heredoc of ~200 lines containing quotes broke the bash tool; write files with the editor tool instead.
+
+### Not done yet
+- Tool-call accuracy on 20 prompts and plan validity (needed before D-003 is final); `think: false` is confirmed.
+- Retrieval quality and latency with real embeddings (M2 benchmark); Turbovec recall@10 vs exact.
+- Key wrapping (Argon2id, recovery code, DPAPI): waiting for approval of the dependencies (D-022).
+
+### Next
+1. `bench/retrieval_bench.py`: 500 synthetic memories + 100 labelled queries with real `nomic-embed-text` vectors; recall@5, MRR, p50/p95 for FTS-only,
+   vector-only, hybrid, hybrid+rerank, and Turbovec vs exact at 4-bit.
+2. M3: extraction and ADD/UPDATE/SUPERSEDE/NOOP with provenance and the 14-day timeline test.

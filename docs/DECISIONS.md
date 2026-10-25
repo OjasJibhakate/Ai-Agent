@@ -192,3 +192,20 @@ Format: context → decision → alternatives → consequences → revisit if.
   A file with a newer version than the code is refused.
 - **Consequences:** Tests use random keys. Key management (D-006) is added later without changing the vault API; until then no real user key exists.
 - **Revisit if:** the team approves the key-wrapping dependencies.
+
+### D-023 — Index consistency: outbox in the write transaction, checkpoint records the outbox id it covers
+- **Date:** 2026-10-25 · **Status:** accepted (implements D-019/D-020)
+- **Context:** The vector index lives in RAM and is saved as a blob in the vault. A crash can leave the blob behind the database.
+- **Decision:**
+  - `add_memory` writes the memory, its embedding, and an `index_outbox` row in one transaction, then applies the outbox to the index.
+  - A checkpoint stores the index bytes plus the highest outbox id it includes (migration 0002).
+  - On start: load the blob, replay outbox rows with a higher id, and compare the index count with the active embeddings.
+    A missing or corrupt blob, or a count mismatch, triggers a full rebuild from `embeddings`.
+- **Consequences:** Nothing written before a crash is lost from search, and a bad blob costs one rebuild instead of wrong answers.
+  Count comparison cannot detect a swapped id (one add lost, one remove lost); the rebuild path is the backstop and the M6 benchmark checks recall.
+
+### D-024 — Async tests run through a small conftest hook, not pytest-asyncio
+- **Date:** 2026-10-25 · **Status:** accepted
+- **Context:** The memory service is async. `pytest-asyncio` would be a new dependency, and the project rules say to ask before adding one.
+- **Decision:** `tests/conftest.py` runs `async def` tests with `asyncio.run`. Fixtures stay synchronous.
+- **Revisit if:** we need async fixtures or shared event loops; then ask to add `pytest-asyncio`.

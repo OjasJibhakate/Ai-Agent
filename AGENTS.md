@@ -15,7 +15,7 @@ Ragnarok is a local, always-on personal agent for the IIIT hackathon. Every mode
 **Focus: the five pillars the PDF stresses.** These are **skills (FR2), planning (FR3), triggers (FR4), encryption (NFR1.2),
 and recovery (NFR3)**. Memory, UI, and everything else exist to support them. When in doubt, spend the time on a pillar.
 
-**Current stage:** design only. No code exists yet. The commands below are the planned interface.
+**Current stage:** memory milestones M0-M1 done and M2 core built (`ragnarok/memory/`, `ragnarok/runtime/gateway.py`). Other pillars are design only. Commands marked "planned" below do not exist yet.
 
 ## Hard rules (never break)
 
@@ -62,8 +62,9 @@ uv run rag daemon              # daemon + UI on http://127.0.0.1:8765
 uv run rag                     # interactive CLI
 uv run pytest -q
 uv run ruff check . ; uv run ruff format .
-uv run python bench/llm_bench.py
-uv run python bench/recovery_bench.py
+uv run python -m bench.llm_bench       # run benches as modules so `ragnarok` imports
+uv run python -m bench.embed_bench
+uv run python -m bench.recovery_bench  # planned
 cd ui ; npm install ; npm run build      # outputs to ragnarok/ui_dist
 ```
 
