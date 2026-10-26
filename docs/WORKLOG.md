@@ -634,3 +634,9 @@ Variety and follow-up robustness, `open_path` ("open the ppt you made"), latency
 - Test added (`test_the_input_box_is_drawn_at_the_height_it_needs...`): it fails without the fix (22 >= 44) and passes with it.
 - Tests: **1507 pass, 3 skipped** (the skips are the usual Windows symlink and real-Office ones), ruff clean.
 - Also found while counting skips: under pytest's default output capture, creating a Tk window fails about 3 times in 100 with "Can't find a usable init.tcl" (measured: 2 failures in 60 windows with capture, 0 in 120 with `-s` or `--capture=sys`, and 0 in 60 in plain Python). The real program does not run under capture, so the cat is not affected. The GUI tests used to turn that into random skips (0 to 2 per run); they now share one retrying helper in `tests/conftest.py` (`make_tk` / `hidden_tk`), which gave 150 of 150 windows in a probe and three clean runs of the GUI tests in a row.
+
+### 2026-10-26 (morning) - `meow` did nothing: a quit cat left its process alive
+- Owner: "typing meow is not working nothing is happening". Found by looking: a `pythonw -m ragnarok gui` process from 04:53 was alive, idle (17 threads, no CPU), with **no window at all** (listed its windows with `EnumWindows`: only hidden Tk helpers), and a screenshot showed no cat on the taskbar. It was the cat the owner quit from the menu after the previous fix; it never exited, so it held the one-copy lock and every `meow` just signalled it.
+- Cause: worker threads from `asyncio.to_thread(read_line / approve_line)` blocked on a queue are joined at interpreter exit. Reproduced in a 10-line script: the process hangs until killed.
+- Fix: `exit_now()` in `gui/app.py` ends the process after the window loop. New `tests/test_gui_exit.py` (a subprocess with a blocked worker exits in time). I stopped the stale process (by its PIDs).
+- Tests: **1508 pass, 3 skipped**, ruff clean.

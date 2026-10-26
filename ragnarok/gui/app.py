@@ -8,6 +8,7 @@ the model thinks, and a slow tool can never freeze the window.
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 import sys
 import threading
@@ -323,7 +324,18 @@ def main() -> int:
     root.deiconify()
     app.start()
     root.mainloop()
+    exit_now(0)
     return 0
+
+
+def exit_now(code: int) -> None:
+    """End the process even if a worker thread is still blocked on the chat queue.
+
+    A quit that leaves the process alive keeps the one-copy lock, so the next `meow` only signals a
+    cat that has no window. The vault is closed by the engine before this runs (and is crash-safe)."""
+    sys.stdout and sys.stdout.flush()
+    sys.stderr and sys.stderr.flush()
+    os._exit(code)
 
 
 if __name__ == "__main__":
