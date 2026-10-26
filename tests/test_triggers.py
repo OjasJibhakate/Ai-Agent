@@ -369,7 +369,7 @@ async def test_set_reminder_understands_the_users_words_and_stores_the_time(tool
         await by_name["set_reminder"].handler(SetReminderArgs(what="call mom", when="at 6pm"))
     )
     assert "remind you to call mom today at 6:00 PM" in out and "(#1)" in out
-    assert "only do this while Ragnarok is open" in out  # honest about what it can do
+    assert "only do this while Ragnarok is open or its background" in out  # honest about it
     (t,) = store.list()
     assert (t.kind, t.spec, t.action) == ("date", "2026-10-26 18:00:00", "notify")
 

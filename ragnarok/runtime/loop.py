@@ -98,11 +98,13 @@ class Agent:
         fast_finish: bool = True,
         on_tool: Callable[[str], Awaitable[None]] | None = None,
         breaker: CircuitBreaker | None = None,
+        role: str = "owner",
     ) -> None:
         self.store = store
         self.svc = svc
         self.gateway = gateway
         self.profile_name = profile
+        self.role = role  # RBAC: what this agent may do at all (policy/roles.py)
         self.approve = approve
         self.tools = {t.name: t for t in (tools or memory_tools(svc, ingestor))}
         self.profile = ProfileCache(store)
@@ -206,7 +208,7 @@ class Agent:
             result.trace.append(ToolTrace(name, args, "invalid_args", False, msg))
             return f"error: invalid_args: {msg}", False
 
-        decision = permissions.check(self.profile_name, name, tool.risk)
+        decision = permissions.check(self.profile_name, name, tool.risk, self.role)
         clean = parsed.model_dump(exclude={"reason"}, exclude_none=True)
         if decision.ask:
             approved = bool(self.approve and await self.approve(name, clean, decision))

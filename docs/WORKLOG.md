@@ -652,3 +652,40 @@ Variety and follow-up robustness, `open_path` ("open the ppt you made"), latency
 - Fixes (D-046): hold back a bare `type` before any click; on a repeated click spot, read what is under it and tell the model; a specific note when a scroll moves nothing; near-identical clicks on one target count as a repeat. Eval after each: 10/15, 11/15, **13/15**.
 - Tests: new `tests/test_screen_landing.py`, `tests/test_gui_screen_menu.py`; four existing screen tests adjusted (clicks meant to be distinct are now spaced apart; one `type`-first lock test clicks first).
 - Not verified: real apps (browser, Explorer, Office); the menu item on the owner's screen (needs the cat restarted); a long task. The eval moves the real mouse for about 6 minutes.
+
+## 2026-10-26 (afternoon) - finishing the requirements: skills, restore, daemon, suggestions, mail, roles, log (D-047 to D-051)
+
+Owner: "complete these requirements". Audit first (FR1-FR4, NFR1-NFR4, 21 sub-requirements): 13 done, 5 partial, 2 unmeasured, 1 missing. This entry closes the gaps.
+
+### Built
+- **FR2.1, FR2.3 (D-047):** skill registry (`skills/registry.py`, vault migration 0007, `/skill`), the sandbox (`sandbox/`: Job Object, scrubbed environment, audit hook), the `text-stats` skill and `fixtures/evil-skill`. These had been built earlier today but were not in the docs.
+- **NFR3.2 (D-048):** `recovery/restore.py` and `bench/recovery_bench.py`.
+- **FR4.1, FR4.2 (D-049):** `rag daemon` (`triggers/daemon.py`, `--startup on`), `triggers/proactive.py`, the engine's suggestion hook, `/suggest`, mail files as "new mail" events.
+- **FR3.2 (D-050):** `skills/mail.py` (list/read/send over a local mailbox folder), `skills/tasks.py` (task board, migration 0008), `fixtures/mailbox/` (one normal and one hostile email).
+- **NFR4.3, NFR4.1 (D-051):** `policy/roles.py`, `/role`, `/log`, `/log plan`, `rag log`.
+- **NFR2 (D-049):** `bench/resource_bench.py`.
+
+### Measured
+- **Tests: 1616 pass, 3 skipped, ruff clean** (was 1551). New files: `test_recovery_restore`, `test_roles_and_log`, `test_proactive_daemon`, `test_mail_tasks`, `test_chat_recovery_roles`.
+- **Kill and resume (NFR3.2):** 50 of 50 runs passed; restart p50 78 ms, p95 89 ms, max 223 ms (target 5,000 ms). 43 of 50 kills cut a tool call in half and it was found and closed each time.
+- **Background cost (NFR2.2):** 0.63% of one core, 0.05% of the machine, peak 50 MB over 20 s with 3 x 300 watched files and 8 triggers (target under 30%).
+- **Hot path (NFR2.1):** intent check p95 0.013 ms over 2,040 sentences; memory search p95 6.7 ms over 500 memories with a stand-in embedder. The real query embedding adds the 82 ms p50 / 117 ms p95 recorded in `bench/results/retrieval_2026-10-25.json`, so the whole path is well under 800 ms.
+- **Real model (`bench.daily_tasks`, mail and task prompts):** list mail, read a hostile email without obeying it, send an email, add a task: 4 of 4. "honest: alarm" fails, and also fails on the code from before this change (checked by stashing), so it is not a regression; the model sets a reminder and says it only works while the program runs.
+
+### Found by doing it
+- Python text-mode writes on Windows turned LF files into CRLF and made a one-line change look like a whole-file rewrite. Files were converted back to LF; scripted edits now use `newline=''`. `ruff format` on a whole folder reformatted unrelated files (`skills/screen/capture.py`, `bench/daily_tasks.py`); those were reverted, so format only the files you touched.
+- Giving headless goals the `automation` role made them refuse changes instead of proposing them, which broke `test_a_folder_goal_runs_headless_and_changes_nothing`. Goals keep the `background` profile and inherit the chat's role.
+- `/resume` after a crash would have re-run a half-done non-idempotent tool silently; it now asks.
+
+### Not done / not verified
+- The daemon was tested with a fake clock and a real vault, not left running for hours; `--startup on` was not tried at a real Windows login. A hidden daemon needs the DPAPI unlock opt-in.
+- Real IMAP/Gmail (D-050), model-written suggestion text, and per-user (OS account) separation behind roles are not built.
+- NFR2.2 covers this process only; GPU/CPU use of the model itself is in `bench/llm_bench.py`.
+- The owner has not yet used any of this with their real vault.
+
+### 2026-10-26 (evening) - "open gmail and write a mail" did nothing, so it now does it (D-050 addendum)
+- Owner: it could not write a mail in Gmail, and "it should open the browser and write it on its own". Cause: the mail tools only worked on a local folder.
+- Added `compose_email` (draft) and `send_gmail` (writes and sends, asks first), `Windows.title_of`, and the `SENDS_EMAIL` ask rule. Tests: **1631 pass** (33 in `test_mail_tasks`, including a title that flickers while Gmail loads, a sign-in page, Esc, and a window that changes).
+- Real model (`bench.daily_tasks`): "open gmail and write" picks `compose_email`, "open gmail, write and send" picks `send_gmail`, 3 of 3 with the send key stubbed.
+- Real browser (the owner's Edge, send key stubbed so nothing was emailed): found by trying it. The first version took a flicker of the tab title during Gmail's start-up ("Untitled") for a changed window and refused; and its "sent" check could be fooled by the front window changing. Now the compose title must hold for 2 s, and the check follows the compose window itself. Final run: it found the compose window, "pressed" the stub, and correctly reported the draft still open.
+- Not verified: a real Ctrl+Enter send (I did not email anyone). My four test runs left about five Gmail draft tabs open in Edge.

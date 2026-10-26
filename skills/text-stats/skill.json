@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "risk": "R0",
+  "tools": [
+    {
+      "name": "text_stats",
+      "description": "Count the words, lines and characters of a text and list its most common words. Use it when the user wants statistics about some text.",
+      "run": ["python", "scripts/stats.py"],
+      "input": {
+        "type": "object",
+        "required": ["text"],
+        "properties": {
+          "text": {"type": "string", "description": "The text to analyse."},
+          "top": {"type": "integer", "description": "How many common words to list (default 3)."}
+        }
+      },
+      "sandbox": "read-only",
+      "network": [],
+      "timeout_s": 10,
+      "idempotent": true
+    }
+  ],
+  "tests": [
+    {
+      "tool": "text_stats",
+      "args": {"text": "the cat sat on the mat\nthe end", "top": 1},
+      "expect": {"words": 8, "lines": 2, "top_words": ["the"]}
+    }
+  ]
+}

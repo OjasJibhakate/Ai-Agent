@@ -39,6 +39,9 @@ class Decision:
     reason: str
 
 
+# Mail leaves the machine and cannot be taken back: it asks in every mode, even `full` (NFR4.3).
+SENDS_EMAIL = frozenset({"send_gmail", "send_mail"})
+
 PROFILES: dict[str, Profile] = {
     # the owner at the keyboard
     "interactive": Profile(
@@ -58,7 +61,7 @@ PROFILES: dict[str, Profile] = {
         "edits",
         "workspace-write",
         frozenset({"memory_search"}),
-        frozenset(),
+        SENDS_EMAIL,
         frozenset(),
         "allow",
         r2="allow",
@@ -67,7 +70,7 @@ PROFILES: dict[str, Profile] = {
         "full",
         "full-access",
         frozenset({"memory_search"}),
-        frozenset({"use_computer"}),
+        frozenset({"use_computer"}) | SENDS_EMAIL,
         frozenset(),
         "allow",
         r2="allow",
@@ -96,7 +99,20 @@ PROFILES: dict[str, Profile] = {
 }
 
 
-def check(profile: str, tool_name: str, risk: Risk) -> Decision:
+def check(profile: str, tool_name: str, risk: Risk, role: str = "owner") -> Decision:
+    """Role first (what is allowed at all), then the profile (when to ask). See `roles.py`."""
+    from ragnarok.policy import roles  # late: roles imports Risk from this module
+
+    try:
+        granted = roles.get(role)
+    except ValueError:
+        return Decision(False, False, "unknown-role", f"no such role: {role}")
+    if not granted.permits(tool_name, risk):
+        return Decision(False, False, f"role:{role}", f"the {role} role may not use this tool")
+    return _check_profile(profile, tool_name, risk)
+
+
+def _check_profile(profile: str, tool_name: str, risk: Risk) -> Decision:
     try:
         p = PROFILES[profile]
     except KeyError:

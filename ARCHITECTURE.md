@@ -535,6 +535,8 @@ For each candidate:
 
 Accept, dismiss, and snooze are recorded per generator, and generators that keep getting dismissed fire less often.
 
+> **Built (D-049):** rules only, no model-written text: an unfinished plan, a remembered date in the next 3 days with no reminder, a remembered habit with no schedule, and the last project in the morning; at most 3 per run, the same idea once a week, delivered to the Inbox and `/suggest`. The generators above that need mail or calendar data are not built.
+
 ---
 
 ## 6. Pillar 4 — Encryption and local-only (NFR1)
@@ -647,6 +649,8 @@ Such a tool is never re-run blindly.
 - **Auto-restart:** the daemon is a Task Scheduler task (*At log on*, *restart on failure every 1 minute*), so it comes back after crashes
   and reboots on its own. Unattended restore after a reboot needs the DPAPI opt-in; otherwise it completes right after the passphrase is entered.
 
+> **Built (D-048, D-049):** `recovery/restore.py` does steps 4-6 as one pass (interrupted plans and steps, cut-off tool calls closed and flagged, the last conversation put back); measured by `bench/recovery_bench.py`. The daemon is `rag daemon`, started at login by a hidden launcher in the Startup folder (`--startup on`) instead of a Task Scheduler task. Snapshots every 50 events were not needed: the event log replays in milliseconds.
+
 ### 7.4 Failure isolation (NFR3.1)
 
 | Failure | Handling |
@@ -734,6 +738,8 @@ It leaves a content-free tombstone in the audit log, and `secure_delete` overwri
 ## 9. Permissions, approvals, explainability (NFR4.1, NFR4.3)
 
 ### 9.1 Profiles (roles) and rules
+
+> **Built (D-051):** profiles decide when to ask; `policy/roles.py` (owner, editor, viewer, automation) decides what is allowed at all, applied first and only able to remove rights. `/role` switches (going up asks), `/log` and `rag log` show the tool, reason, rule and result of each call.
 
 `config/permissions.yaml` uses the same rule style as Claude Code (`Tool(pattern)`). Rules are evaluated deny → ask → allow,
 and the default is ask.

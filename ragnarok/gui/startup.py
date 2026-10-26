@@ -51,6 +51,28 @@ def remove(folder: Path | None = None) -> bool:
     return False
 
 
+DAEMON_NAME = "Ragnarok Daemon.vbs"
+
+
+def install_daemon(
+    folder: Path | None = None, project: Path = PROJECT, uv: str | None = None
+) -> Path:
+    """Start the background daemon (`rag daemon`) at login, hidden."""
+    target = (folder or startup_folder()) / DAEMON_NAME
+    target.parent.mkdir(parents=True, exist_ok=True)
+    text = script_text(project, uv).replace("-m ragnarok gui", "-m ragnarok daemon")
+    target.write_bytes(text.encode("utf-8"))
+    return target
+
+
+def remove_daemon(folder: Path | None = None) -> bool:
+    target = (folder or startup_folder()) / DAEMON_NAME
+    if target.exists():
+        target.unlink()
+        return True
+    return False
+
+
 def installed(folder: Path | None = None) -> bool:
     return ((folder or startup_folder()) / NAME).exists()
 

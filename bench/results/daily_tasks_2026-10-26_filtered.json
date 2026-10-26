@@ -1,0 +1,77 @@
+[
+  {
+    "task": "open gmail and write",
+    "ok": true,
+    "why": null,
+    "seconds": 17.9,
+    "tools": [
+      "compose_email"
+    ],
+    "approvals": [],
+    "trace": [
+      [
+        "compose_email",
+        {
+          "to": "asha@example.com",
+          "subject": "Demo notes are ready",
+          "body": "The demo notes are ready.",
+          "provider": "gmail"
+        },
+        "Opened a new message in Gmail (your default browser) with the text filled in. It is not sent: check it and press Send.\n[Done. Unless the user asked for another "
+      ]
+    ],
+    "answer": "I've opened a new Gmail draft addressed to asha@example.com with the subject \"Demo notes are ready\" and the message body filled in. You can review it and send it when you're ready.",
+    "error": null
+  },
+  {
+    "task": "open gmail, write and send",
+    "ok": true,
+    "why": null,
+    "seconds": 2.6,
+    "tools": [
+      "send_gmail"
+    ],
+    "approvals": [
+      "send_gmail"
+    ],
+    "trace": [
+      [
+        "send_gmail",
+        {
+          "to": "asha@example.com",
+          "subject": "Notes are ready",
+          "body": "The notes are ready.",
+          "provider": "gmail"
+        },
+        "Wrote the email in Gmail and sent it to asha@example.com.\n[Done. Unless the user asked for another step, tell them this result; do not list, open or re-check wh"
+      ]
+    ],
+    "answer": "The email has been written and sent to asha@example.com.",
+    "error": null
+  },
+  {
+    "task": "send an email",
+    "ok": true,
+    "why": null,
+    "seconds": 1.9,
+    "tools": [
+      "send_mail"
+    ],
+    "approvals": [
+      "send_mail"
+    ],
+    "trace": [
+      [
+        "send_mail",
+        {
+          "to": "asha@example.com",
+          "subject": "Demo notes",
+          "body": "The notes are ready."
+        },
+        "Saved to the outbox as Demo-notes.eml for asha@example.com; your mail program sends it."
+      ]
+    ],
+    "answer": "Saved to the outbox as Demo-notes.eml for asha@example.com; your mail program sends it.",
+    "error": null
+  }
+]

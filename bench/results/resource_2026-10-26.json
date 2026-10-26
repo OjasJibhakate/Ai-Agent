@@ -1,0 +1,24 @@
+{
+ "date": "2026-10-26",
+ "nfr2_2_background": {
+  "seconds": 20.0,
+  "logical_processors": 12,
+  "cpu_percent_of_one_core": 0.63,
+  "cpu_percent_of_machine": 0.05,
+  "peak_working_set_mb": 49.7
+ },
+ "nfr2_1_intent": {
+  "sentences": 2040,
+  "p50_ms": 0.0065,
+  "p95_ms": 0.013
+ },
+ "nfr2_1_retrieval": {
+  "memories": 500,
+  "p50_ms": 4.98,
+  "p95_ms": 6.66,
+  "note": "fake embedder: add the real query-embedding latency from retrieval_*.json"
+ },
+ "meets_nfr2_2": true,
+ "meets_nfr2_1_intent": true,
+ "meets_nfr2_1_retrieval_search": true
+}

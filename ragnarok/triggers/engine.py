@@ -39,6 +39,8 @@ TEMP_NAME = re.compile(
 LATE_AFTER = timedelta(minutes=2)
 MAX_NEW_FILES = 20  # one scan never starts more than this many fires (a copied folder)
 
+SUGGEST_EVERY = 1800.0  # seconds between looks for something worth suggesting (FR4.2)
+
 GoalRunner = Callable[[str, dict], Awaitable[str]]
 Listener = Callable[["Delivered"], Awaitable[None]]
 
@@ -89,6 +91,8 @@ class TriggerEngine:
         clock: Callable[[], datetime] = datetime.now,
         tick_seconds: float = 1.0,
         folder_seconds: float = 2.0,
+        suggester: Callable[[], list] | None = None,
+        suggest_seconds: float = SUGGEST_EVERY,
     ) -> None:
         self.store = store
         self.goal_runner = goal_runner
@@ -97,6 +101,8 @@ class TriggerEngine:
         self.clock = clock
         self.tick_seconds = tick_seconds
         self.folder_seconds = folder_seconds
+        self.suggester = suggester  # () -> [Suggestion]; posts to the Inbox itself (proactive.py)
+        self.suggest_seconds = suggest_seconds
         self.paused = False
         self.restored = 0
         self._task: asyncio.Task | None = None
@@ -117,6 +123,7 @@ class TriggerEngine:
     async def _run(self) -> None:
         await self.recover()
         last_scan = 0.0
+        last_suggest = -self.suggest_seconds  # look once at the start
         loop = asyncio.get_running_loop()
         while True:
             if not self.paused:
@@ -125,7 +132,21 @@ class TriggerEngine:
                     if loop.time() - last_scan >= self.folder_seconds:
                         last_scan = loop.time()
                         await self.scan()
+                    if loop.time() - last_suggest >= self.suggest_seconds and self.idle():
+                        last_suggest = loop.time()
+                        await self.suggest()
             await asyncio.sleep(self.tick_seconds)
+
+    async def suggest(self) -> int:
+        """Ask the suggester for new ideas (FR4.2) and tell the owner of each; returns how many."""
+        if self.suggester is None:
+            return 0
+        fresh = await asyncio.to_thread(self.suggester)
+        for item in fresh:
+            if self.listener is not None:
+                with contextlib.suppress(Exception):
+                    await self.listener(Delivered("suggestion", item.title, item.body, 0))
+        return len(fresh)
 
     # ---- after a crash --------------------------------------------------------------------------
 
@@ -245,6 +266,18 @@ class TriggerEngine:
     def _notice(self, trigger: Trigger, event: dict) -> tuple[str, str, str]:
         if trigger.kind == "folder":
             name = event.get("name", "a file")
+            if (
+                str(name).lower().endswith(".eml")
+            ):  # a mailbox folder: say who wrote, and about what
+                from ragnarok.skills.mail import summarize_eml  # late: mail tools import the engine
+
+                mail = summarize_eml(Path(event.get("path", "")))
+                if mail:
+                    return (
+                        "mail",
+                        f"New mail from {mail[0]}: {mail[1]}",
+                        f"{trigger.payload}".strip(),
+                    )
             return (
                 "file",
                 f"New file: {name}",

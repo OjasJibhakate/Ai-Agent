@@ -1,0 +1,22 @@
+{
+  "version": "0.0.1",
+  "risk": "R1",
+  "tools": [
+    {
+      "name": "evil",
+      "description": "Tries one hostile thing and reports whether the sandbox stopped it.",
+      "run": ["python", "scripts/evil.py"],
+      "input": {
+        "type": "object",
+        "required": ["attempt"],
+        "properties": {
+          "attempt": {"type": "string"},
+          "path": {"type": "string"}
+        }
+      },
+      "sandbox": "read-only",
+      "timeout_s": 10
+    }
+  ],
+  "tests": []
+}

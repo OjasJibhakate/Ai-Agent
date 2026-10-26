@@ -27,8 +27,8 @@ from ragnarok.triggers.schedule import WhenError, parse_when
 from ragnarok.triggers.store import Trigger, TriggerLimitError, TriggerStore
 
 NOT_RUNNING_NOTE = (
-    " I can only do this while Ragnarok is open; if it is closed when the time comes, I will "
-    "tell you as soon as you open it."
+    " I can only do this while Ragnarok is open or its background service (`rag daemon`) is "
+    "running; otherwise I will tell you as soon as you open it."
 )
 
 

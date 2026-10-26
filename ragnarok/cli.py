@@ -4,6 +4,8 @@
   chat                     talk to the agent; it remembers across sessions
   memory list|show|search|history|forget|archive|restore
   ingest                   turn pending events into memories now
+  daemon                   run triggers in the background with no chat open (FR4.1)
+  log                      what the agent did, which tool, and which rule allowed it (NFR4.1)
   doctor                   check local-only mode, models, GPU, and encryption
 
 The models run in Ollama (a separate background process on this machine); this program only
@@ -158,6 +160,86 @@ def cmd_chat(args: argparse.Namespace) -> int:
     finally:
         rt.close()
     return 0
+
+
+def cmd_daemon(args: argparse.Namespace) -> int:
+    """The always-on background process: reminders, schedules, watched folders, suggestions."""
+    from ragnarok.gui import startup
+    from ragnarok.triggers.daemon import (
+        AlreadyRunning,
+        Daemon,
+        SingleInstance,
+        lock_path,
+        mail_root,
+        run_daemon,
+    )
+
+    ui = Console()
+    if args.startup:
+        if args.startup == "on":
+            ui.success(f"The daemon will start when you log in ({startup.install_daemon()}).")
+            if not (home_dir() / DPAPI_FILE).exists():
+                ui.notice(
+                    "It runs hidden, so it cannot ask for a passphrase: turn on automatic "
+                    "unlock first (the cat's right-click menu, or `init --dpapi`)."
+                )
+        else:
+            ui.success("Removed." if startup.remove_daemon() else "It was not set to start.")
+        return 0
+    home = home_dir()
+    try:
+        with SingleInstance(lock_path(home)):
+            rt = open_runtime(home, unlock(home))
+            try:
+                daemon = Daemon(
+                    rt.store, rt.svc, rt.ingestor, rt.gateway, mail_root=mail_root(home),
+                    log=lambda text: ui.write(" " + text),
+                )  # fmt: skip
+                ui.notice("Running. Press Ctrl+C to stop.")
+                asyncio.run(run_daemon(daemon))
+            except KeyboardInterrupt:
+                ui.notice("Stopped.")
+            finally:
+                rt.close()
+    except AlreadyRunning:
+        raise CliError("the daemon is already running.") from None
+    return 0
+
+
+def cmd_log(args: argparse.Namespace) -> int:
+    """What the agent did: each tool call with the rule that allowed it, or a plan's steps."""
+    from ragnarok.planning.store import PlanStore
+    from ragnarok.runtime.explain import latest_plan_id, plan_steps, recent_tool_calls
+
+    home = home_dir()
+    rt = open_runtime(home, unlock(home))
+    ui = Console()
+    try:
+        if args.plan:
+            plan_id = latest_plan_id(PlanStore(rt.vault))
+            lines = plan_steps(PlanStore(rt.vault), plan_id) if plan_id else []
+            ui.write()
+            for text in lines or ["No plan yet."]:
+                ui.write("   " + text)
+        else:
+            ui.write()
+            calls = recent_tool_calls(rt.store, args.limit)
+            for c in calls:
+                ui.write("   " + format_call(c))
+            if not calls:
+                ui.notice("No tool calls recorded yet.")
+        ui.write()
+    finally:
+        rt.close()
+    return 0
+
+
+def format_call(c) -> str:
+    """One tool call as a line: when, which tool, why it was allowed, what happened."""
+    shown = ", ".join(f"{k}={v!r:.30}" for k, v in list(c.args.items())[:3])
+    why = f' because "{c.reason}"' if c.reason else ""
+    outcome = c.result[:60] if c.result else c.status
+    return f"{c.ts[11:19]}  {c.tool}({shown}){why}  [{c.rule}]  {outcome}"
 
 
 def cmd_ingest(args: argparse.Namespace) -> int:
@@ -479,6 +561,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     mem.add_argument("--dry-run", action="store_true", help="with `prune`: show, don't archive")
     mem.set_defaults(run=cmd_memory)
+
+    daemon = sub.add_parser("daemon", help="run reminders, schedules and watches in the background")
+    daemon.add_argument(
+        "--startup", choices=["on", "off"], help="start the daemon when you log in to Windows"
+    )
+    daemon.set_defaults(run=cmd_daemon)
+
+    log = sub.add_parser("log", help="show what the agent did and why it was allowed")
+    log.add_argument("--plan", action="store_true", help="the steps of the latest plan instead")
+    log.add_argument("--limit", type=int, default=15)
+    log.set_defaults(run=cmd_log)
 
     doctor = sub.add_parser("doctor", help="check the setup")
     doctor.set_defaults(run=cmd_doctor)

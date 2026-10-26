@@ -46,6 +46,12 @@ class Windows:
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
         return WindowInfo(hwnd, win32gui.GetWindowText(hwnd), _process_name(pid), pid)
 
+    def title_of(self, hwnd: int) -> str:
+        """The title of one window, wherever it is (a browser shows its active tab here)."""
+        import win32gui
+
+        return win32gui.GetWindowText(hwnd) if win32gui.IsWindow(hwnd) else ""
+
     def is_own_terminal(self, window: WindowInfo | None) -> bool:
         """Is this the window the user typed to Ragnarok in?"""
         if window is None:

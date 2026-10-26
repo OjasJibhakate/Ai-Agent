@@ -62,6 +62,7 @@ BASE16 = (
 ALERTS = {  # kind of thing that arrived by itself -> (label, colour)
     "reminder": ("Reminder", AMBER), "file": ("New file", SKY),
     "result": ("Done", GREEN), "failed": ("Problem", CORAL),
+    "suggestion": ("Suggestion", VIOLET), "mail": ("New mail", SKY),
 }  # fmt: skip
 
 
@@ -466,7 +467,11 @@ class Console:
             ("/inbox", "reminders and results that arrived while you were away"),
             ("/reminders", "what I will remind you of or watch for"),
             ("/cancel N", "stop reminder, schedule or watch N"),
+            ("/skill", "list, add, test, disable or remove skills"),
             ("/mode M", "ask, edits or full: how much I do without asking"),
+            ("/role R", "owner, editor, viewer or automation: what I may do at all"),
+            ("/log", "which tools I used and why they were allowed (/log plan for steps)"),
+            ("/suggest", "ideas from what I remember and what is going on"),
             ("/clear", "clear the screen"),
             ("/quit", "leave (I keep learning from this chat)"),
         ]
