@@ -124,6 +124,8 @@ class ScriptedVision:
         self.verify_prompts: list[str] = []
         self.pngs: list[bytes] = []
         self.questions: list[str] = []
+        self.marked: list[bytes] = []
+        self.under: list[str] = [""]
 
     async def decide(self, png: bytes, prompt: str) -> dict[str, Any]:
         self.prompts.append(prompt)
@@ -140,6 +142,12 @@ class ScriptedVision:
         if isinstance(item, Exception):
             raise item
         return item
+
+    async def read_marked(self, png: bytes, prompt: str) -> dict[str, Any]:
+        """What is under a marked point: scripted through `under` (empty text means "unsure")."""
+        self.marked.append(png)
+        under = self.under
+        return {"under_marker": under.pop(0) if len(under) > 1 else under[0]}
 
     async def answer(self, png: bytes, question: str) -> str:
         self.questions.append(question)

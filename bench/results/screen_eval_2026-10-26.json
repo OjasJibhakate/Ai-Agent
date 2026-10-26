@@ -1,0 +1,372 @@
+[
+  {
+    "scenario": "buttons",
+    "ok": true,
+    "claimed_done": true,
+    "steps": 3,
+    "seconds": 8.2,
+    "summary": "Done: The text 'Last action: click Export' is visible on the screen, indicating that the Export button was clicked.",
+    "events": [
+      [
+        "CLICK",
+        "Export"
+      ]
+    ],
+    "actions": [
+      "step 1: click Export button at (786, 153)",
+      "step 2: click Export button at (642, 170)"
+    ]
+  },
+  {
+    "scenario": "buttons",
+    "ok": true,
+    "claimed_done": true,
+    "steps": 3,
+    "seconds": 8.4,
+    "summary": "Done: The text 'Last action: click Export' is visible on the screen, indicating that the Export button was clicked.",
+    "events": [
+      [
+        "CLICK",
+        "Export"
+      ]
+    ],
+    "actions": [
+      "step 1: click Export button at (843, 375)",
+      "step 2: click Export button at (629, 370)"
+    ]
+  },
+  {
+    "scenario": "buttons",
+    "ok": false,
+    "claimed_done": true,
+    "steps": 3,
+    "seconds": 8.1,
+    "summary": "Done: The text 'Last action: click Export' is visible on the screen, indicating that the Export button was clicked.",
+    "events": [
+      [
+        "CLICK",
+        "Open"
+      ],
+      [
+        "CLICK",
+        "Export"
+      ]
+    ],
+    "actions": [
+      "step 1: click Export button at (685, 423)",
+      "step 2: click Export button at (90, 370)"
+    ]
+  },
+  {
+    "scenario": "search",
+    "ok": true,
+    "claimed_done": true,
+    "steps": 6,
+    "seconds": 15.9,
+    "summary": "Done: The screenshot shows 'lofi beats' typed in the search box and displays 'Last action: search lofi beats', confirming the task was carried out.",
+    "events": [
+      [
+        "SEARCH",
+        "lofi beats"
+      ],
+      [
+        "SEARCH",
+        "lofi beats"
+      ],
+      [
+        "SEARCH",
+        "lofi beats"
+      ]
+    ],
+    "actions": [
+      "step 1: type 'lofi beats'",
+      "step 2: type 'lofi beats' into the search box",
+      "step 3: press enter",
+      "step 4: press enter",
+      "step 5: click the Go button at (512, 149)"
+    ]
+  },
+  {
+    "scenario": "search",
+    "ok": true,
+    "claimed_done": true,
+    "steps": 4,
+    "seconds": 11.8,
+    "summary": "Done: The screenshot shows 'lofi beats' typed in the search box and a message below stating 'Last action: search lofi beats', indicating the task was completed.",
+    "events": [
+      [
+        "SEARCH",
+        "lofi beats"
+      ],
+      [
+        "SEARCH",
+        "lofi beats"
+      ]
+    ],
+    "actions": [
+      "step 1: type 'lofi beats' into the search box",
+      "step 2: press enter",
+      "step 3: click Go button at (508, 153)"
+    ]
+  },
+  {
+    "scenario": "search",
+    "ok": true,
+    "claimed_done": true,
+    "steps": 6,
+    "seconds": 15.3,
+    "summary": "Done: The screenshot shows 'lofi beats' typed in the search box and a message below stating 'Last action: search lofi beats', indicating the task was completed.",
+    "events": [
+      [
+        "SEARCH",
+        "lofi beats"
+      ],
+      [
+        "SEARCH",
+        "lofi beats"
+      ],
+      [
+        "SEARCH",
+        "lofi beats"
+      ]
+    ],
+    "actions": [
+      "step 1: type 'lofi beats'",
+      "step 2: type 'lofi beats' into the search box",
+      "step 3: press enter",
+      "step 4: press enter",
+      "step 5: click the Go button at (512, 149)"
+    ]
+  },
+  {
+    "scenario": "form",
+    "ok": true,
+    "claimed_done": true,
+    "steps": 6,
+    "seconds": 16.0,
+    "summary": "Done: The form shows 'Priya' in the Name field, 'priya@example.com' in the Email field, the Subscribe checkbox is ticked, and there is a log message indicating 'Last action: submit Priya priya@example.com 1', which confirms the task was completed.",
+    "events": [
+      [
+        "SUBMIT",
+        "Priya priya@example.com 1"
+      ]
+    ],
+    "actions": [
+      "step 1: type 'Priya' into the Name field",
+      "step 2: click the Email text field at (274, 138)",
+      "step 3: type 'priya@example.com'",
+      "step 4: click Subscribe checkbox at (105, 246)",
+      "step 5: click Submit button at (197, 365)"
+    ]
+  },
+  {
+    "scenario": "form",
+    "ok": true,
+    "claimed_done": true,
+    "steps": 6,
+    "seconds": 16.0,
+    "summary": "Done: The form shows 'Priya' in the Name field, 'priya@example.com' in the Email field, the 'Subscribe to newsletter' checkbox is ticked, and there is a log message at the bottom stating 'Last action: submit Priya priya@example.com 1', which confirms the submission occurred.",
+    "events": [
+      [
+        "SUBMIT",
+        "Priya priya@example.com 1"
+      ]
+    ],
+    "actions": [
+      "step 1: type 'Priya' into the Name field",
+      "step 2: click the Email text field at (274, 138)",
+      "step 3: type 'priya@example.com'",
+      "step 4: click Subscribe checkbox at (105, 246)",
+      "step 5: click Submit button at (197, 365)"
+    ]
+  },
+  {
+    "scenario": "form",
+    "ok": true,
+    "claimed_done": true,
+    "steps": 6,
+    "seconds": 16.0,
+    "summary": "Done: The form shows 'Priya' in the Name field, 'priya@example.com' in the Email field, the 'Subscribe to newsletter' checkbox is ticked, and there is a log message at the bottom stating 'Last action: submit Priya priya@example.com 1', which confirms the submission occurred.",
+    "events": [
+      [
+        "SUBMIT",
+        "Priya priya@example.com 1"
+      ]
+    ],
+    "actions": [
+      "step 1: type 'Priya' into the name field",
+      "step 2: click the email input field at (274, 139)",
+      "step 3: type 'priya@example.com'",
+      "step 4: click the checkbox for Subscribe to newsletter at (150, 246)",
+      "step 5: click Submit button at (189, 370)"
+    ]
+  },
+  {
+    "scenario": "list",
+    "ok": true,
+    "claimed_done": false,
+    "steps": 5,
+    "seconds": 15.6,
+    "summary": "I couldn't finish: the screen stopped responding to my actions.",
+    "events": [
+      [
+        "OPEN",
+        "budget.xlsx"
+      ],
+      [
+        "OPEN",
+        "budget.xlsx"
+      ]
+    ],
+    "actions": [
+      "step 1: double click budget.xlsx at (105, 42)",
+      "step 2: click budget.xlsx at (105, 42)",
+      "step 3: double click budget.xlsx at (105, 42)",
+      "step 4: click budget.xlsx at (105, 42)"
+    ]
+  },
+  {
+    "scenario": "list",
+    "ok": true,
+    "claimed_done": true,
+    "steps": 7,
+    "seconds": 22.5,
+    "summary": "Done: The screenshot shows 'Last action: open budget.xlsx' below the file list, indicating the task was completed.",
+    "events": [
+      [
+        "OPEN",
+        "readme.md"
+      ],
+      [
+        "OPEN",
+        "budget.xlsx"
+      ],
+      [
+        "OPEN",
+        "budget.xlsx"
+      ]
+    ],
+    "actions": [
+      "step 1: double click budget.xlsx at (105, 428)",
+      "step 2: click budget.xlsx at (105, 428)",
+      "step 3: double click budget.xlsx at (97, 528)",
+      "step 4: click budget.xlsx at (105, 428)",
+      "step 5: double click budget.xlsx at (97, 528)",
+      "step 6: click budget.xlsx at (105, 528)"
+    ]
+  },
+  {
+    "scenario": "list",
+    "ok": false,
+    "claimed_done": false,
+    "steps": 6,
+    "seconds": 11.2,
+    "summary": "I couldn't finish: the screen stopped responding to my actions.",
+    "events": [],
+    "actions": [
+      "step 1: click budget.xlsx at (100, 250)",
+      "step 2: click budget.xlsx at (184, 396)",
+      "step 3: scroll up 5",
+      "step 4: scroll up 5",
+      "step 5: scroll up 5"
+    ]
+  },
+  {
+    "scenario": "scroll",
+    "ok": true,
+    "claimed_done": true,
+    "steps": 5,
+    "seconds": 13.5,
+    "summary": "Done: The task is finished. The file 'zebra.txt' has been selected as indicated by the blue highlight and the message 'Last action: pick zebra.txt'.",
+    "events": [
+      [
+        "PICK",
+        "item39.txt"
+      ],
+      [
+        "PICK",
+        "zebra.txt"
+      ]
+    ],
+    "actions": [
+      "step 1: scroll down 5",
+      "step 2: scroll down 5",
+      "step 3: click zebra.txt at (98, 473)",
+      "step 4: click zebra.txt at (60, 532)"
+    ]
+  },
+  {
+    "scenario": "scroll",
+    "ok": true,
+    "claimed_done": false,
+    "steps": 10,
+    "seconds": 26.9,
+    "summary": "I couldn't finish within 10 steps.",
+    "events": [
+      [
+        "PICK",
+        "item05.txt"
+      ],
+      [
+        "PICK",
+        "item07.txt"
+      ],
+      [
+        "PICK",
+        "item09.txt"
+      ],
+      [
+        "PICK",
+        "item38.txt"
+      ],
+      [
+        "PICK",
+        "zebra.txt"
+      ]
+    ],
+    "actions": [
+      "step 1: click item06.txt at (100, 250)",
+      "step 2: click item09.txt at (100, 350)",
+      "step 3: click item10.txt at (100, 450)",
+      "step 4: scroll down 5",
+      "step 5: scroll down 5",
+      "step 6: scroll down 5",
+      "step 7: scroll down 5",
+      "step 8: click zebra.txt at (189, 432)",
+      "step 9: click zebra.txt at (189, 432)",
+      "step 10: click zebra.txt at (105, 542)"
+    ]
+  },
+  {
+    "scenario": "scroll",
+    "ok": true,
+    "claimed_done": true,
+    "steps": 9,
+    "seconds": 26.1,
+    "summary": "Done: The screenshot shows 'zebra.txt' highlighted in blue at the bottom of the list, and below it explicitly states 'Last action: pick zebra.txt', confirming the task was completed.",
+    "events": [
+      [
+        "PICK",
+        "item05.txt"
+      ],
+      [
+        "PICK",
+        "item36.txt"
+      ],
+      [
+        "PICK",
+        "zebra.txt"
+      ]
+    ],
+    "actions": [
+      "step 1: click item05.txt at (100, 250)",
+      "step 2: scroll down 5",
+      "step 3: scroll down 5",
+      "step 4: scroll down 5",
+      "step 5: scroll down 5",
+      "step 6: click zebra.txt at (196, 280)",
+      "step 7: click zebra.txt at (196, 280)",
+      "step 8: click zebra.txt at (196, 520)"
+    ]
+  }
+]

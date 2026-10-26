@@ -23,7 +23,8 @@ MAX_WIDTH = 1280  # about 1.3 s per look on the RTX 4050; 1920 wide costs 2.6 s 
 DETAIL_WIDTH = 1920  # for reading dense small print
 SCALE = 1000
 MIN_CHANGED_PIXELS = 48  # fewer changed pixels than this is a blinking cursor, not an effect
-PIXEL_STEP = 32  # a pixel counts as changed when a colour channel moved by more than this
+MARK_CROP_W, MARK_CROP_H, MARK_ZOOM = 320, 120, 3  # the "what is under this point" picture
+PIXEL_STEP = 32 # a pixel counts as changed when a colour channel moved by more than this
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,27 @@ class Frame:
         fx = min(max(x, 0), SCALE) / SCALE
         fy = min(max(y, 0), SCALE) / SCALE
         return self.left + round(fx * (self.width - 1)), self.top + round(fy * (self.height - 1))
+
+    def marked_crop(self, sx: int, sy: int) -> bytes:
+        """A zoomed PNG of the area around screen point (sx, sy), with a red cross (four arms and an
+        empty centre) on that point, so the model can read what is under it."""
+        h, w, _ = self.rgb.shape
+        x = round((sx - self.left) / max(self.width - 1, 1) * (w - 1))
+        y = round((sy - self.top) / max(self.height - 1, 1) * (h - 1))
+        cw, ch = min(MARK_CROP_W, w), min(MARK_CROP_H, h)
+        left = int(min(max(x - cw // 2, 0), w - cw))
+        top = int(min(max(y - ch // 2, 0), h - ch))
+        part = self.rgb[top : top + ch, left : left + cw]
+        big = np.ascontiguousarray(np.repeat(np.repeat(part, MARK_ZOOM, axis=0), MARK_ZOOM, axis=1))
+        cx = (min(max(x, 0), w - 1) - left) * MARK_ZOOM
+        cy = (min(max(y, 0), h - 1) - top) * MARK_ZOOM
+        red = (255, 0, 0)
+        inner, outer = 6, 30
+        big[max(cy - 1, 0) : cy + 2, max(cx - outer, 0) : max(cx - inner, 0)] = red
+        big[max(cy - 1, 0) : cy + 2, cx + inner : cx + outer] = red
+        big[max(cy - outer, 0) : max(cy - inner, 0), max(cx - 1, 0) : cx + 2] = red
+        big[cy + inner : cy + outer, max(cx - 1, 0) : cx + 2] = red
+        return encode_png(big)
 
     def looks_like(self, other: Frame, min_pixels: int = MIN_CHANGED_PIXELS) -> bool:
         """True if the two frames show the same thing: fewer than `min_pixels` pixels differ.

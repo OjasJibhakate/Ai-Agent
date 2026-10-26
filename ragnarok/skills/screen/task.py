@@ -85,6 +85,31 @@ VERIFY_SCHEMA: dict[str, Any] = {
 }
 
 
+UNDER_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"under_marker": {"type": "string"}},
+    "required": ["under_marker"],
+}
+UNDER_PROMPT = (
+    "A red cross marks a point on the screen (the centre of the four red arms). "
+    "Read the text of the item exactly at the centre of the cross."
+)
+CLICKS = ("click", "double_click", "right_click")
+SAME_SPOT_PIXELS = 30  # a click this close to the last one is "the same spot again"
+_FILLER = {"the", "a", "an", "button", "field", "box", "file", "named", "icon", "item", "link"}
+
+
+def names_the_target(target: str, found: str) -> bool:
+    """Does the text read under a point fit what the model said it was clicking?"""
+    t, f = target.lower().strip(), found.lower().strip()
+    if not t or not f:
+        return False
+    if t in f or (len(f) >= 4 and f in t):
+        return True
+    words = lambda s: {w for w in re.findall(r"[a-z0-9.]+", s) if len(w) >= 3 and w not in _FILLER}  # noqa: E731
+    return bool(words(t) & words(f))
+
+
 class Action(BaseModel):
     action: Literal[
         "click",
@@ -213,6 +238,10 @@ class GatewayVision:
         messages = [{"role": "user", "content": prompt, "images": [self._b64(png)]}]
         return await self.gateway.chat_json(messages, VERIFY_SCHEMA, num_predict=80)
 
+    async def read_marked(self, png: bytes, prompt: str) -> dict[str, Any]:
+        messages = [{"role": "user", "content": prompt, "images": [self._b64(png)]}]
+        return await self.gateway.chat_json(messages, UNDER_SCHEMA, num_predict=60)
+
     async def answer(self, png: bytes, question: str) -> str:
         messages = [
             {
@@ -317,6 +346,11 @@ class ScreenTask:
         cursor_at: tuple[int, int] | None = None  # where our last action left the mouse
         last_target = ""
         steps = 0
+        acted = False  # has anything been clicked, typed or pressed yet in this task?
+        last_click: tuple[int, int] | None = None  # screen point of the last click we made
+        skipped = False  # the last step was a click we held back, so the screen is unchanged
+        last_action: Action | None = None  # the action we last carried out
+        prev_click: tuple[str, str, tuple[int, int]] | None = None  # kind, target, screen point
 
         def finish(ok: bool | None, summary: str) -> TaskResult:
             return TaskResult(ok, summary, steps, self.clock() - started, history[:])
@@ -333,13 +367,19 @@ class ScreenTask:
 
             frame = await asyncio.to_thread(self.screen.grab)
             note = ""
-            if prev is not None:
+            if prev is not None and not skipped:
                 if await asyncio.to_thread(frame.looks_like, prev):
                     unchanged += 1
                     note = (
                         "The last action did not visibly change the screen. If it already did "
                         "what the task needs, reply done; otherwise try something different."
                     )
+                    if last_action is not None and last_action.action == "scroll":
+                        note = (
+                            "That scroll moved nothing: its x and y were not on the list or page "
+                            "that scrolls (or it is already at its end). Scroll again with x and y "
+                            "on the middle of the list itself."
+                        )
                 else:
                     unchanged = 0
             if unchanged >= UNCHANGED_LIMIT:
@@ -347,6 +387,7 @@ class ScreenTask:
                     False, "I couldn't finish: the screen stopped responding to my actions."
                 )
             prev = frame
+            skipped = False
 
             action, error = await self._decide(frame, task, user_words, history, note)
             if action is None:
@@ -367,8 +408,25 @@ class ScreenTask:
             key = (
                 f"{action.action}|{action.x}|{action.y}|{action.text}|{action.keys}|{action.amount}"
             )
-            same_run = same_run + 1 if key == same_key else 1
+            spot = (
+                frame.to_screen(action.x, action.y)
+                if action.action in CLICKS and action.x is not None and action.y is not None
+                else None
+            )
+            # a click a few pixels away from the last one, on the same thing, is the same click:
+            # the model re-aims a little each time, which hid "it already worked" from this check
+            nearby = (
+                spot is not None
+                and prev_click is not None
+                and prev_click[0] == action.action
+                and prev_click[1] == action.target.strip().lower()
+                and not _far(prev_click[2], spot, SAME_SPOT_PIXELS)
+            )
+            same_run = same_run + 1 if key == same_key or nearby else 1
             same_key = key
+            prev_click = (
+                (action.action, action.target.strip().lower(), spot) if spot is not None else None
+            )
             # scrolling, arrow keys and waiting legitimately repeat while the screen keeps changing
             moving = action.action in ("scroll", "key", "wait") and unchanged == 0
             if same_run >= REPEAT_LIMIT and not moving:
@@ -394,12 +452,39 @@ class ScreenTask:
                 if self.progress:
                     await self.progress(f"refused: {refusal}")
                 continue
+            if action.action == "type" and not acted:
+                # Nothing has been clicked or pressed, so no field has the focus: the text would go
+                # to whatever window is in front. A fill clicks the field first.
+                history.append(
+                    f"{steps}. {desc} -> not done: nothing has the focus yet. "
+                    "Use fill on the text box (it clicks the box, then types)."
+                )
+                skipped = True
+                continue
 
             sx = sy = None
             if action.x is not None and action.y is not None:
                 sx, sy = frame.to_screen(action.x, action.y)
             elif action.action == "scroll":
                 sx, sy = frame.to_screen(500, 500)  # no point given: the middle of the screen
+            if (
+                action.action in CLICKS
+                and action.target
+                and sx is not None
+                and sy is not None
+                and last_click is not None
+                and not _far(last_click, (sx, sy), SAME_SPOT_PIXELS)
+            ):
+                # The same spot again usually means the first click did not land on what the model
+                # thinks it did. Read what is really there and say so, instead of clicking it again.
+                found = await self._read_under(frame, sx, sy)
+                if found is not None and not names_the_target(action.target, found):
+                    history.append(
+                        f"{steps}. {desc} -> not done: that point is on '{found}', "
+                        f"not '{action.target}'. Pick the point of '{action.target}' itself."
+                    )
+                    skipped = True
+                    continue
             if self.log:  # log before acting: the action is durable before it has any effect
                 await self.log(
                     "screen_action", json.dumps(self._record(steps, action, sx, sy, task))
@@ -407,6 +492,9 @@ class ScreenTask:
             stopped = await self._perform(action, sx, sy)
             if sx is not None and sy is not None:
                 cursor_at = (sx, sy)  # clicks, fills and scrolls all leave the mouse there
+                last_click = (sx, sy) if action.action in CLICKS else last_click
+            acted = acted or not stopped
+            last_action = action
             if stopped:
                 history.append(f"{steps}. {desc} -> stopped: {stopped}")
                 if self.progress:
@@ -418,8 +506,26 @@ class ScreenTask:
 
     # ---- deciding ----------------------------------------------------------------------------
 
+    async def _read_under(self, frame: Frame, sx: int, sy: int) -> str | None:
+        """The text under a screen point, read by the model from a zoomed picture (None: unsure)."""
+        read = getattr(self.vision, "read_marked", None)
+        if read is None:
+            return None
+        png = await asyncio.to_thread(frame.marked_crop, sx, sy)
+        try:
+            data = await read(png, UNDER_PROMPT)
+        except (GatewayError, TypeError, ValueError):
+            return None
+        found = str(data.get("under_marker", "")).strip()
+        return found or None
+
     async def _decide(
-        self, frame: Frame, task: str, user_words: str, history: list[str], note: str
+        self,
+        frame: Frame,
+        task: str,
+        user_words: str,
+        history: list[str],
+        note: str,
     ) -> tuple[Action | None, str]:
         png = await asyncio.to_thread(frame.png)
         trail = "\n".join(history[-8:]) or "(nothing yet)"

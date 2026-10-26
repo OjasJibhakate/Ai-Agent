@@ -193,8 +193,8 @@ async def test_other_windows_are_left_alone():
 
 
 async def test_it_gives_up_after_the_step_limit():
-    loop, world, *_ = make([click(10 + i, 10) for i in range(40)] + [done()], max_steps=5)
-    # distinct clicks, so repeats do not stop it first; the model never says done
+    loop, world, *_ = make([click(10 + i * 60, 10) for i in range(15)] + [done()], max_steps=5)
+    # distinct clicks (far apart), so repeats do not stop it first; the model never says done
     result = await loop.run("never ends")
     assert result.ok is False and result.steps == 5 and "within 5 steps" in result.summary
     assert len(acts(world)) == 5
@@ -212,7 +212,7 @@ async def test_it_stops_at_the_time_limit():
 
 
 async def test_esc_stops_it_straight_away():
-    loop, world, *_ = make([click(300 + i, 300) for i in range(40)])
+    loop, world, *_ = make([click(10 + i * 60, 300) for i in range(15)])
     original = world.bump
 
     def bump_then_esc():
@@ -256,7 +256,7 @@ async def test_moving_the_mouse_yourself_hands_control_back():
 
 
 async def test_a_screen_that_never_changes_is_not_clicked_forever():
-    loop, world, *_ = make([click(100 + i * 7, 100) for i in range(30)])
+    loop, world, *_ = make([click(10 + i * 60, 100) for i in range(15)])
     world.frozen = True
     result = await loop.run("click the dead button")
     assert result.ok is False and "stopped responding" in result.summary and result.steps <= 4
@@ -527,8 +527,9 @@ async def test_the_lock_keeps_input_inside_the_intended_window():
     assert [e[0] for e in acts(world)] == ["click"]
     assert sum("lost the focus" in a for a in result.actions) == 2
     # with the right window in front, typing goes through
-    loop2, world2, *_ = make([typing("hello"), done()], lock_hwnd=111)
-    assert await loop2.run("type") and acts(world2) == [("type", "hello")]
+    loop2, world2, *_ = make([click(10, 10), typing("hello"), done()], lock_hwnd=111)
+    assert await loop2.run("type")
+    assert [e[0] for e in acts(world2)] == ["click", "type"]
 
 
 # ---- fill: click a field, then type ---------------------------------------------------------

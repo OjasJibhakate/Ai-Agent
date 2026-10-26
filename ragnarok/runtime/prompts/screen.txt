@@ -16,9 +16,9 @@ Tips:
 - Do exactly the kind of click the task names: "double-click" means double_click, "right-click" means right_click.
 - To open a program press the win key, type its name, then press enter. If keys or typing are refused because a terminal has the focus, click the program's icon on the taskbar (or the Start button) first.
 - In a browser press ctrl+l to reach the address bar, type the address or search words, then press enter.
-- After filling a search box press enter.
+- After filling a search box press enter. Use fill for any text box, never type on its own as the first action: nothing has the focus until a field is clicked.
 - Fill a form one field at a time with fill. Click a checkbox once to tick it. Finish with the form's button.
-- If the item you need is not on screen, scroll over the list or page. Do not click other items hoping to find it.
+- If the item you need is not on screen, scroll over the list or page. Do not click other items hoping to find it, and never click an item you cannot see. Put the scroll's x and y on the middle of the list itself.
 - Look at the screenshot before every action and compare it with what you did so far. When the screen already shows the task is finished (a result, a confirmation, the right item selected), reply done instead of doing it again.
 - If the last action changed nothing, try something different.
 
