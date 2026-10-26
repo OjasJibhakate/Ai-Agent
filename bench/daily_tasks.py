@@ -138,6 +138,7 @@ class World:
     browsers: FakeBrowsers
     bin: Bin
     opened: list[Path] = field(default_factory=list)
+    editor_opened: list[Path] = field(default_factory=list)
     approvals: list[str] = field(default_factory=list)
     turns: list[TurnResult] = field(default_factory=list)
     triggers: TriggerStore | None = None
@@ -492,6 +493,12 @@ def check_gmail_sent(w: World) -> str | None:
     return None if "asha@example.com" in urls[0] and "body=" in urls[0] else "draft incomplete"
 
 
+def check_editor_opened(w: World) -> str | None:
+    if not w.editor_opened:
+        return f"the editor was not opened (tools: {w.tools_used}; said {w.answer[:80]!r})"
+    return None if w.editor_opened[0].name == "hello.py" else f"wrong file: {w.editor_opened[0]}"
+
+
 def check_mail_sent(w: World) -> str | None:
     sent = list((w.mail / "outbox").glob("*.eml")) if w.mail else []
     if not sent:
@@ -692,6 +699,11 @@ MORE_TASKS = [
         "open gmail, write and send",
         ["open gmail and write and send a mail to asha@example.com saying the notes are ready"],
         check_gmail_sent,
+    ),
+    Task(
+        "write code, open in the editor",
+        ["write a python file hello.py that prints hello", "now open hello.py in vs code"],
+        check_editor_opened,
     ),
     Task(
         "send an email",
@@ -956,7 +968,8 @@ async def run_task(gw: Gateway, task: Task) -> dict:
             + app_tools(world.catalog)
             + file_tools(roots, home, mode)
             + file_op_tools(
-                roots, home, mode, world.bin, data_dirs=[root / "vault"], opener=world.opened.append
+                roots, home, mode, world.bin, data_dirs=[root / "vault"], opener=world.opened.append,
+                editor=world.editor_opened.append,
             )
             + trigger_tools(world.triggers, roots, home, mode)
             + shell_tools(home)

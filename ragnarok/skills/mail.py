@@ -188,7 +188,7 @@ def compose_url(args: ComposeEmailArgs) -> str:
 
 
 GMAIL_LOAD_SECONDS = 45.0
-GMAIL_SEND_SECONDS = 12.0
+GMAIL_SEND_SECONDS = 16.0
 STABLE_SECONDS = 2.0  # the compose title must hold this long: Gmail reloads while it starts
 
 
@@ -202,7 +202,7 @@ class GmailSender:
     It opens Gmail's compose page with the recipient, subject and text already in the address, so
     nothing has to be typed or clicked into place. Only then does it act, and only when it can see
     that the browser's front window really is a Gmail compose window: it waits for that title,
-    presses Ctrl+Enter (Gmail's send shortcut), and checks the compose title went away. If Gmail
+    clicks Gmail's blue Send button, and checks the compose title went away. If Gmail
     shows a sign-in page instead, nothing is pressed and the user is told to sign in once.
     Pressing Esc, or the Escape key held down, stops it before the keystroke.
     """
@@ -213,12 +213,16 @@ class GmailSender:
         *,
         windows=None,
         press_send: Callable[[], None] | None = None,
+        focus_body: Callable[[int], None] | None = None,
+        sent_check: Callable[[int], bool] | None = None,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.launcher = launcher
         self._windows = windows
-        self._press_send = press_send or press_ctrl_enter
+        self._press_send = press_send or press_send_keys
+        self._focus_body = focus_body or click_compose_body
+        self._sent_check = sent_check or send_button_gone
         self.sleep = sleep
         self.clock = clock
 
@@ -272,28 +276,109 @@ class GmailSender:
             raise MailError("Gmail did not show a compose window, so nothing was sent." + hint)
         front = self.windows.foreground()
         hwnd = front.hwnd if front else 0
+        self._focus_body(hwnd)  # a freshly loaded page has no keyboard focus in the message yet
         self._press_send()
         # Follow the compose window itself, not whatever is in front: the user may click away.
+        # Gmail's full-page compose stays on screen after sending ("Message sent" toast, a greyed
+        # Send button) and its tab title may not change, so the screen is checked as well.
         gone = self._wait(
-            lambda _t: "compose" not in self.windows.title_of(hwnd).lower(), GMAIL_SEND_SECONDS
+            lambda _t: (
+                "compose" not in self.windows.title_of(hwnd).lower() or self._sent_check(hwnd)
+            ),
+            GMAIL_SEND_SECONDS,
         )
         if gone:
             return f"Wrote the email in Gmail and sent it to {to}."
         raise MailError("I pressed Send but Gmail still shows the draft; check it in the browser")
 
 
-def press_ctrl_enter() -> None:
-    """Ctrl+Enter, used only by GmailSender after it has checked the front window."""
+def click_compose_body(hwnd: int) -> None:
+    """Click inside the message area of the Gmail window, so the page has focus before Send.
+
+    The compose page fills the browser window, with the message text in the middle of it, so a
+    click at the horizontal middle and 40% down lands in the editor and never on a button.
+    """
     if sys.platform != "win32":
         raise MailError("sending from the browser needs Windows")
-    from ragnarok.skills.screen.input import KEYEVENTF_KEYUP as UP
-    from ragnarok.skills.screen.input import VK, _key, _send
+    import win32gui
 
-    _send(_key(VK["ctrl"]))
-    _send(_key(VK["enter"]))
-    time.sleep(0.05)
-    _send(_key(VK["enter"], 0, UP))
-    _send(_key(VK["ctrl"], 0, UP))
+    from ragnarok.skills.screen.input import WindowsInput
+
+    left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+    WindowsInput().click(left + (right - left) // 2, top + int((bottom - top) * 0.40))
+    time.sleep(0.4)
+
+
+def find_send_button(rgb, left: int, top: int, width: int, height: int) -> tuple[int, int] | None:
+    """Screen position of Gmail's blue Send button in a captured frame, or None.
+
+    The button is the largest solid blob of Gmail blue in the lower half of the screen (the
+    "Manage storage" link is thin text, so it never makes a big blob).
+    """
+    import numpy as np
+
+    h, w, _ = rgb.shape
+    r, g, b = (rgb[:, :, i].astype(int) for i in range(3))
+    mask = (b > 195) & (r < 100) & (g > 70) & (g < 150)  # the two blues of the Send button
+    mask[: h // 2] = False
+    seen = np.zeros_like(mask)
+    best: list[tuple[int, int]] = []
+    for y, x in zip(*np.nonzero(mask), strict=True):
+        if seen[y, x]:
+            continue
+        blob, stack = [], [(y, x)]
+        seen[y, x] = True
+        while stack:
+            cy, cx = stack.pop()
+            blob.append((cy, cx))
+            for ny, nx in ((cy + 1, cx), (cy - 1, cx), (cy, cx + 1), (cy, cx - 1)):
+                if 0 <= ny < h and 0 <= nx < w and mask[ny, nx] and not seen[ny, nx]:
+                    seen[ny, nx] = True
+                    stack.append((ny, nx))
+        if len(blob) > len(best):
+            best = blob
+    if len(best) < 300:
+        return None
+    ys, xs = zip(*best, strict=True)
+    if max(xs) - min(xs) < 0.032 * w:
+        return None  # only the dark arrow half is left: Gmail has greyed out "Send" (sending)
+    # The blob is "Send" plus the little arrow beside it (schedule send); click the "Send" end.
+    cx, cy = min(xs) + 0.33 * (max(xs) - min(xs)), (min(ys) + max(ys)) / 2
+    return left + round(cx * width / w), top + round(cy * height / h)
+
+
+def send_button_gone(hwnd: int) -> bool:
+    """After clicking Send: the compose window is still in front, and its blue Send button is
+    gone (Gmail greys it out while the message goes). A different window in front proves nothing."""
+    if sys.platform != "win32":
+        return False
+    from ragnarok.skills.screen.capture import WindowsScreen
+    from ragnarok.skills.screen.winapi import Windows
+
+    front = Windows().foreground()
+    if front is None or front.hwnd != hwnd:
+        return False
+    frame = WindowsScreen().grab(1400)
+    return find_send_button(frame.rgb, frame.left, frame.top, frame.width, frame.height) is None
+
+
+def press_send_keys() -> None:
+    """Press Gmail's Send button: find the blue button on screen and click it.
+
+    Used only by GmailSender after it has checked that the front window is a Gmail compose window.
+    Synthesized Ctrl+Enter, and Tab then Enter, did not register in the full-page compose view in
+    our live test (Tab only moved focus), so the button is clicked like a person would.
+    """
+    if sys.platform != "win32":
+        raise MailError("sending from the browser needs Windows")
+    from ragnarok.skills.screen.capture import WindowsScreen
+    from ragnarok.skills.screen.input import WindowsInput
+
+    frame = WindowsScreen().grab(1400)
+    spot = find_send_button(frame.rgb, frame.left, frame.top, frame.width, frame.height)
+    if spot is None:
+        raise MailError("I could not find Gmail's Send button on the screen, so nothing was sent")
+    WindowsInput().click(*spot)
 
 
 class SendGmailArgs(ComposeEmailArgs):

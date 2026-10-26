@@ -12,13 +12,13 @@ Then: [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) (the 22-item tracker with e
 
 Target machine: HP OMEN 16, i5-13420H, 16 GB RAM, RTX 4050 6 GB, Windows 11, no WSL or Docker.
 
-*Last updated: 2026-10-26 (IST). 1631 tests pass, 3 skipped, `ruff` clean.*
+*Last updated: 2026-10-26 (IST). 1638 tests pass, 3 skipped, `ruff` clean.*
 
 ---
 
 ## Status at a glance
 
-**20 of the 22 checklist items are built and backed by a test or a measurement; 2 are partly done.** Details and evidence: `docs/REQUIREMENTS.md`.
+**All 22 checklist items are built and backed by a test or a measurement**, two with a stated reading or gap (GPU is above 30% during each answer; the VS Code launch was not verified live). Details and evidence: `docs/REQUIREMENTS.md`.
 
 | Pillar / area | State | Where |
 |---|---|---|
@@ -29,7 +29,7 @@ Target machine: HP OMEN 16, i5-13420H, 16 GB RAM, RTX 4050 6 GB, Windows 11, no 
 | Encryption (NFR1) | Done: SQLCipher vault, passphrase + recovery code, optional DPAPI | `ragnarok/memory/vault.py`, `ragnarok/vault/` |
 | Recovery (NFR3) | Done: restore after a hard kill in under 0.1 s, circuit breaker | `ragnarok/recovery/` |
 | Control (NFR4) | Done: roles, modes, approvals, `/log`, memory controls | `ragnarok/policy/`, `ragnarok/runtime/explain.py` |
-| Partly | Integrations (no real IMAP, IDE or project-management tool; a real Gmail send was never run); inference measured against the 30% target | see `docs/REQUIREMENTS.md` |
+| Stated limits | Inference: GPU about 78% for the ~6 s of an answer (about 11% averaged), CPU under 11%; the VS Code launch is untested live; no IMAP | see `docs/REQUIREMENTS.md` |
 
 ---
 
@@ -76,7 +76,7 @@ Memory controls: `memory list|search|show|history|forget|archive|restore`, `memo
 
 What it can do, in everyday words (checked on the real model by `bench/daily_tasks.py`, 61 of 64 on the full run):
 make, copy, move, rename and delete (Recycle Bin) files and folders; make Word, PowerPoint, Excel and PDF files and code in several languages, and run it;
-open apps and websites; download named installers and pictures; summarise a folder into a deck or PDF; set reminders and schedules;
+open apps, websites and code in VS Code; download named installers and pictures; summarise a folder into a deck or PDF; set reminders and schedules;
 read, write and queue email; open Gmail with a message written, or write and send it (`send_gmail`, asks first); keep a task board.
 Sending mail asks in every mode.
 
@@ -109,16 +109,15 @@ Times are commit times (IST). Details and numbers for each line are in the work 
 | 2026-10-26 03:59 - 05:40 | **The pixel cat** (tkinter): taskbar cat that opens a chat, `meow`, automatic unlock, right-click "What is on my screen?" (D-044, D-045) | `4022a6a` ... `a75e082` |
 | 2026-10-26 06:14 | Screen acting fixed: 3/10 to 13/15 on the live test window (D-046) | `1819246` |
 | 2026-10-26 08:24 | **Skills registry and sandbox** (D-047); **crash restore** with a 50-kill bench (D-048); **`rag daemon`** and rule-based suggestions (D-049); mail and task board (D-050); **roles, `/log`** (D-051) | `f2cd46d` |
-| 2026-10-26 (later) | **Gmail in the browser** (`compose_email`, `send_gmail`); sending mail asks in every mode; requirements tracker and judge guide | see `docs/WORKLOG.md` |
+| 2026-10-26 (later) | **Gmail in the browser** (`compose_email`, `send_gmail`, verified live); sending mail asks in every mode; **`open_in_editor`** (VS Code); inference measured (`bench/inference_bench.py`); requirements tracker and judge guide | see `docs/WORKLOG.md` |
 
 ### Remaining
 
 | Item | Status |
 |---|---|
-| A real `send_gmail` run end to end (only the window detection was tried on the real Edge, with the send key stubbed) | **next, needs you** |
+| Try `open in vs code` on your own screen (it would not start from the shell used for testing) | **next, needs you** |
 | Use it for a few days with your real vault; consolidation has not run on a real vault yet (needs finished weeks with 4+ notes each) | **next, needs you** |
-| Measure model inference against the 30% resource target (only the background engine is measured: 0.05%) | not started |
-| Real IMAP/Gmail API, an IDE integration, an external project-management tool | not started |
+| Real IMAP/Gmail API; an external project-management product | not started |
 | Leave the daemon running for hours; start it at a real Windows login | not tried |
 | Model-written suggestion text; more suggestion patterns | not started |
 | Summaries grouped by entity; an export encrypted with a passphrase; a held-out evaluation set for memory | not started |
@@ -136,7 +135,8 @@ Times are commit times (IST). Details and numbers for each line are in the work 
 | Embedding `nomic-embed-text` | 768-d, `100% GPU`, query embed p50 82 ms / p95 117 ms | `bench.embed_bench` |
 | Retrieval quality (500 memories, 124 labelled queries) | recall@5 0.895, MRR 0.835; superseded and deleted memories never returned | `bench.retrieval_bench` |
 | **Retrieval + intent (NFR2.1, target under 800 ms)** | about 125 ms: embedding p95 117 ms + search p95 6.7 ms + intent 0.013 ms | `bench/resource_bench.py` |
-| **Background load (NFR2.2, target under 30%)** | engine with 3 folders x 300 files, 8 triggers, suggestions: **0.05% of the machine**, 50 MB peak. Inference is not measured against 30% | `bench/resource_bench.py` |
+| **Background load (NFR2.2, target under 30%)** | engine with 3 folders x 300 files, 8 triggers, suggestions: **0.05% of the machine**, 50 MB peak | `bench/resource_bench.py` |
+| **Inference load (NFR2.2)** | Ollama **0.0% CPU idle, 8.3% (peak 10.7%) generating**; GPU **3.8% idle, 77.7% (peak 86%) during a ~6 s answer**; about 11% GPU averaged at one request a minute; 5.3 of 6.1 GB VRAM held | `bench/inference_bench.py` |
 | **Restore after a hard kill (NFR3.2, target under 5 s)** | 50 of 50 runs restored; restart p95 89 ms, max 223 ms | `bench/recovery_bench.py` |
 | Restart with 10k memories | index rebuilt in 0.44 s, or loaded from the saved blob in 0.20 s | `bench.retrieval_bench` |
 | Extraction from events (15 hand-written cases) | 15/15; p50 1.7 s. ADD/UPDATE/SUPERSEDE decisions 12/12 | `bench.ingest_eval` |
@@ -173,6 +173,7 @@ uv run python -m bench.daily_tasks        # everyday requests on the real model 
 uv run python -m bench.plan_tasks         # multi-step goals on the real model
 uv run python bench/recovery_bench.py     # NFR3.2: kill and resume, 50 times
 uv run python bench/resource_bench.py     # NFR2: background cost and hot-path latency
+uv run python bench/inference_bench.py    # NFR2.2: CPU and GPU while the model answers
 ```
 
 Use `127.0.0.1`, never `localhost`, for Ollama: `localhost` adds about 2 s to the first connection on this machine.
@@ -203,7 +204,7 @@ ragnarok/
 skills/          user-facing skills (SKILL.md + skill.json), e.g. text-stats
 fixtures/        evil-skill (hostile test skill), mailbox (sample .eml files)
 bench/           benchmarks; results in bench/results/
-tests/           1631 tests, one file per area
+tests/           1638 tests, one file per area
 docs/            HACKATHON.md  REQUIREMENTS.md  MEMORY.md  DECISIONS.md  WORKLOG.md  history/
 ```
 

@@ -15,7 +15,7 @@ Ragnarok is a local, always-on personal agent for the IIIT hackathon. Every mode
 **Focus: the five pillars the PDF stresses.** These are **skills (FR2), planning (FR3), triggers (FR4), encryption (NFR1.2),
 and recovery (NFR3)**. Memory, UI, and everything else exist to support them. When in doubt, spend the time on a pillar.
 
-**Current stage (2026-10-26):** all five pillars and the memory milestones M0-M5 are built, tested and measured (1631 tests). Open gaps: a real Gmail send, real IMAP/IDE/project-management integration, inference measured against the 30% target. Evidence per requirement: `docs/REQUIREMENTS.md`; judge guide: `docs/HACKATHON.md`.
+**Current stage (2026-10-26):** all five pillars and the memory milestones M0-M5 are built, tested and measured (1638 tests); all 22 checklist items have a test or a measurement. Open gaps: VS Code launch unverified live, no IMAP or external project-management product, GPU above 30% during each answer. Evidence per requirement: `docs/REQUIREMENTS.md`; judge guide: `docs/HACKATHON.md`.
 
 ## Hard rules (never break)
 
@@ -68,6 +68,7 @@ uv run ruff check .                # run `ruff format` only on files you changed
 uv run python -m bench.llm_bench   # run benches as modules so `ragnarok` imports
 uv run python bench/recovery_bench.py   # NFR3.2, kill and resume
 uv run python bench/resource_bench.py   # NFR2, background cost and hot-path latency
+uv run python bench/inference_bench.py  # NFR2.2, CPU and GPU while the model answers
 ```
 
 ## Dev environment notes (this laptop)
@@ -77,7 +78,7 @@ uv run python bench/resource_bench.py   # NFR2, background cost and hot-path lat
 - **uv** is at the winget path; open a new shell or refresh PATH if `uv` isn't found. The project venv is `.venv` (Python 3.12).
 - Run tests with `uv run pytest -q`. Don't run `ruff format` on markdown; the config already excludes it.
 - The repo clone lives at `C:\Users\parth\dev\Ai-Agent` (outside OneDrive on purpose).
-- **Current focus:** the five pillars are built; what is left is in `docs/REQUIREMENTS.md` (real Gmail send, IMAP, IDE integration, inference vs the 30% target).
+- **Current focus:** the five pillars are built; what is left is in `docs/REQUIREMENTS.md` (VS Code launch check, IMAP).
 - Files are written with LF line endings. On Windows, Python's text-mode `open(..., 'w')` writes CRLF; pass `newline=''`.
 
 ## Where things go

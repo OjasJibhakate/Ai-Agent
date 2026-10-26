@@ -56,6 +56,38 @@ def open_with_default_program(path: Path) -> None:
     os.startfile(str(path))
 
 
+def find_code_editor() -> str | None:
+    """The VS Code launcher (`code.cmd`), from PATH or the usual install folders."""
+    import shutil
+
+    found = shutil.which("code")
+    if found:
+        return found
+    for base in (os.environ.get("LOCALAPPDATA"), os.environ.get("ProgramFiles")):
+        if base:
+            for sub in (
+                "Programs/Microsoft VS Code/bin/code.cmd",
+                "Microsoft VS Code/bin/code.cmd",
+            ):
+                candidate = Path(base) / sub
+                if candidate.is_file():
+                    return str(candidate)
+    return None
+
+
+def open_in_code_editor(path: Path) -> None:
+    """Open a file or folder in Visual Studio Code, without a console window."""
+    import subprocess
+
+    if sys.platform != "win32":
+        raise FileOpError("opening the editor is only set up on Windows")
+    code = find_code_editor()
+    if code is None:
+        raise FileOpError("Visual Studio Code was not found (the `code` command is not installed)")
+    # a list, never a shell string: the path cannot add arguments
+    subprocess.Popen([code, "--", str(path)], creationflags=0x08000000)  # CREATE_NO_WINDOW
+
+
 class FileOpError(ValueError):
     """The operation can't be done (the message is shown to the model and the user)."""
 
@@ -197,8 +229,10 @@ def file_op_tools(
     recycler: Recycler = send_to_recycle_bin,
     data_dirs: list[Path] | None = None,
     opener: Recycler | None = None,
+    editor: Recycler | None = None,
 ) -> list[Tool]:
     opener = opener or open_with_default_program
+    editor = editor or open_in_code_editor
     access = FileAccess(roots if roots is not None else default_roots(home), home, mode, data_dirs)
     guard: PathGuard = access.guard
 
@@ -402,6 +436,14 @@ def file_op_tools(
         opener(path)
         return f"Opened {path.name or path}"
 
+    # -- open_in_editor (FR3.2: the code editor)
+    def _edit(args: OpenPathArgs) -> str:
+        path = find(args.path, readable)
+        if not path.exists():
+            raise FileOpError(f"{path} does not exist")
+        editor(path)  # an editor shows a script's text; it never runs it
+        return f"Opened {path.name or path} in Visual Studio Code"
+
     def wrap(fn: Callable) -> Callable:
         async def handler(args):
             try:
@@ -512,5 +554,17 @@ def file_op_tools(
             sandbox="full-access",  # the opening program runs as the user, outside any sandbox
             fs={"read": ["the user's profile folder"]},
             handler=wrap(_open),
+        ),
+        Tool(
+            name="open_in_editor",
+            description="Open a file or project folder in Visual Studio Code. Use it when the "
+            "user asks to open code or a project in their editor.",
+            args_model=OpenPathArgs,
+            risk=Risk.R1,  # opens a window; closing it undoes it
+            idempotent=True,
+            timeout_s=20,
+            sandbox="full-access",  # the editor runs as the user, outside any sandbox
+            fs={"read": ["the user's profile folder"]},
+            handler=wrap(_edit),
         ),
     ]

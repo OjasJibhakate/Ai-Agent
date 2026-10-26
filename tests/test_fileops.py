@@ -67,11 +67,12 @@ def test_every_tool_declares_what_the_rules_require_and_the_risks_are_as_designe
     assert risks == {
         "make_folder": Risk.R1, "create_file": Risk.R1, "copy_path": Risk.R1,
         "extract_text": Risk.R1, "edit_file": Risk.R2, "move_path": Risk.R2, "delete_path": Risk.R3,
-        "open_path": Risk.R1,
+        "open_path": Risk.R1, "open_in_editor": Risk.R1,
     }  # fmt: skip
     for name, tool in tools.items():
         # opening a file starts another program as the user, so it is declared full-access
-        assert tool.sandbox == ("full-access" if name == "open_path" else "workspace-write")
+        opens = name in ("open_path", "open_in_editor")
+        assert tool.sandbox == ("full-access" if opens else "workspace-write")
         assert tool.timeout_s > 0 and tool.fs
         assert isinstance(tool.idempotent, bool) and tool.network == []
         assert len(tool.description.split(". ")) <= 2, tool.name
@@ -789,3 +790,52 @@ async def test_loose_names_that_fit_several_things_are_listed_not_guessed(world)
 async def test_a_name_that_matches_nothing_is_just_not_found(world):
     out = await use(tools_with_opener(world, Opened()), "open_path", path="no such thing")
     assert out.startswith("error:")
+
+
+# ---- open_in_editor (FR3.2: the code editor) ---------------------------------------------------
+
+
+def tools_with_editor(world, editor):
+    home, vault = world
+    roots = [home / "Desktop", home / "Documents", home / "Downloads"]
+    tools = file_op_tools(roots, home, None, Bin(), data_dirs=[vault], editor=editor)
+    return {t.name: t for t in tools}
+
+
+async def test_open_in_editor_opens_a_script_in_the_editor_and_never_runs_it(world):
+    home, _ = world
+    (home / "Documents" / "script.py").write_text("print('hi')")
+    editor = Opened()
+    tools = tools_with_editor(world, editor)
+    assert tools["open_in_editor"].risk.value == "R1"
+    out = await use(tools, "open_in_editor", path="script.py")
+    assert "Visual Studio Code" in getattr(out, "text", out)
+    assert editor.paths == [home / "Documents" / "script.py"]
+
+
+async def test_open_in_editor_opens_a_project_folder_by_name(world):
+    home, _ = world
+    (home / "Documents" / "demo-app").mkdir()
+    editor = Opened()
+    await use(tools_with_editor(world, editor), "open_in_editor", path="demo-app")
+    assert editor.paths == [home / "Documents" / "demo-app"]
+
+
+async def test_open_in_editor_refuses_the_vault_and_missing_things(world):
+    _, vault = world
+    editor = Opened()
+    tools = tools_with_editor(world, editor)
+    assert (await use(tools, "open_in_editor", path=str(vault))).startswith("error:")
+    assert (await use(tools, "open_in_editor", path="no-such-file.py")).startswith("error:")
+    assert editor.paths == []
+
+
+def test_the_editor_launcher_is_found_or_reported(monkeypatch):
+    from ragnarok.skills import fileops
+
+    monkeypatch.setattr("shutil.which", lambda name: "C:/vs/code.cmd")
+    assert fileops.find_code_editor() == "C:/vs/code.cmd"
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setenv("LOCALAPPDATA", "C:/nowhere")
+    monkeypatch.setenv("ProgramFiles", "C:/nowhere")
+    assert fileops.find_code_editor() is None

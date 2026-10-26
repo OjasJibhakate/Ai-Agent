@@ -248,7 +248,7 @@ class FakeWindows:
         return self.escape
 
 
-def make_sender(titles, after=("Compose - Gmail",), escape=False):
+def make_sender(titles, after=("Compose - Gmail",), escape=False, sent=False):
     from ragnarok.skills.mail import GmailSender
 
     ticks = iter(range(100_000))
@@ -258,6 +258,8 @@ def make_sender(titles, after=("Compose - Gmail",), escape=False):
         launcher,
         windows=FakeWindows(titles, list(after), escape),
         press_send=lambda: pressed.append("ctrl+enter"),
+        focus_body=lambda hwnd: pressed.append("click"),
+        sent_check=lambda hwnd: sent,
         sleep=lambda s: None,
         clock=lambda: next(ticks) * 0.5,
     )
@@ -280,7 +282,7 @@ async def test_send_gmail_opens_the_draft_presses_send_and_checks_it_went(mail):
     assert tool.risk is Risk.R2 and not tool.idempotent
     out = await tool.handler(tool.args_model(**ARGS))
     assert "sent it to asha@example.com" in getattr(out, "text", out)
-    assert pressed == ["ctrl+enter"]
+    assert pressed == ["click", "ctrl+enter"]
     assert "su=Demo" in launcher.opened[0][1] and "ready." in launcher.opened[0][1]
 
 
@@ -306,14 +308,14 @@ async def test_a_title_that_flickers_while_gmail_loads_is_waited_out(mail):
     )
     tool = send_tool(mail, sender)
     out = await tool.handler(tool.args_model(**ARGS))
-    assert "sent it to" in getattr(out, "text", out) and pressed == ["ctrl+enter"]
+    assert "sent it to" in getattr(out, "text", out) and pressed == ["click", "ctrl+enter"]
 
 
 async def test_send_gmail_reports_a_draft_that_is_still_open(mail):
     sender, _launcher, pressed = make_sender(["Compose - Gmail"])
     tool = send_tool(mail, sender)
     out = await tool.handler(tool.args_model(**ARGS))
-    assert pressed == ["ctrl+enter"] and "still shows the draft" in str(out)
+    assert pressed == ["click", "ctrl+enter"] and "still shows the draft" in str(out)
 
 
 async def test_escape_stops_it_before_any_key_is_pressed(mail):
@@ -337,3 +339,38 @@ def test_sending_mail_asks_in_every_mode_and_never_for_a_viewer():
     assert not permissions.check("edits", "move_path", Risk.R2).ask  # other R2 tools unchanged
     assert permissions.check("background", "send_gmail", Risk.R2).ask
     assert not permissions.check("full", "send_gmail", Risk.R2, "viewer").allowed
+
+
+async def test_send_is_confirmed_by_the_screen_when_the_tab_title_never_changes(mail):
+    """Full-page compose stays put after sending; the Send button greying out is the sign."""
+    sender, _launcher, pressed = make_sender(["Compose - Gmail"], sent=True)
+    tool = send_tool(mail, sender)
+    out = await tool.handler(tool.args_model(**ARGS))
+    assert "sent it to" in getattr(out, "text", out) and pressed == ["click", "ctrl+enter"]
+
+
+def test_the_send_button_is_found_by_its_two_blues_and_the_send_half_is_clicked():
+    import numpy as np
+
+    from ragnarok.skills.mail import find_send_button
+
+    frame = np.full((400, 700, 3), 245, np.uint8)  # a pale page
+    frame[360:386, 100:152] = (70, 127, 219)  # the "Send" half, lighter blue (focused)
+    frame[360:386, 153:176] = (11, 87, 208)  # the arrow half, darker blue
+    frame[200:204, 300:330] = (11, 87, 208)  # a thin blue link above the lower half: ignored
+    x, y = find_send_button(frame, 0, 0, 700, 400)
+    assert 100 <= x < 152 and 360 <= y <= 386  # inside "Send", not on the arrow
+    assert find_send_button(np.full((400, 700, 3), 245, np.uint8), 0, 0, 700, 400) is None
+
+
+def test_a_greyed_out_send_button_counts_as_gone():
+    import numpy as np
+
+    from ragnarok.skills.mail import find_send_button
+
+    frame = np.full((400, 1400, 3), 245, np.uint8)
+    frame[360:386, 100:152] = (141, 175, 238)  # "Send" greyed out while the message goes
+    frame[360:386, 153:176] = (11, 87, 208)  # the arrow half stays dark blue
+    assert find_send_button(frame, 0, 0, 1400, 400) is None
+    frame[360:386, 100:152] = (70, 127, 219)  # normal again
+    assert find_send_button(frame, 0, 0, 1400, 400) is not None

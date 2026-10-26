@@ -53,7 +53,7 @@ notes, and code. The design is built around five pillars; everything else suppor
 | Suggestions | generators + model-written text, toasts | rule-based, no model call (D-049) | Four patterns; fixed wording |
 | Daemon | Task Scheduler task, restart on failure | `rag daemon` with a lock file and heartbeat; `--startup on` puts a launcher in the Startup folder | Simpler; hidden start needs the DPAPI unlock opt-in |
 | Recovery | snapshots, replay, idempotency keys, in-flight resolution | `restore_state` over the event log and plan tables; cut-off calls closed and flagged (D-048) | No snapshots (replay is milliseconds); `/resume` asks before repeating a non-idempotent call |
-| Mail and calendar | mail/calendar MCP servers | local `.eml` mailbox folder, Gmail through the user's browser (D-050) | No stored account password; no calendar; no IMAP |
+| Mail, calendar, editor | mail/calendar MCP servers, VS Code | local `.eml` mailbox folder; Gmail through the user's browser, which can write **and send** by finding and clicking the Send button (D-050, D-052); `open_in_editor` for VS Code | No stored account password; no calendar; no IMAP |
 | Permissions | profiles, allow/ask/deny, hooks | profiles + modes + roles (D-051); sending mail always asks | No hooks |
 | Explainability | decision trace, Proof panel | `/log`, `/log plan`, `rag log` | No Proof panel |
 | Memory | FR1 design in `docs/MEMORY.md` | milestones M0-M5 built | Turbovec exact-search default (D-026) |
@@ -956,7 +956,7 @@ Runtime data lives outside the repo and outside OneDrive, in `%LOCALAPPDATA%\Rag
 | FR2.2 | embedding top-k + native tool calls + schema validation | §3.4 | decision trace in the transcript | Built (schema + description, no embedding top-k) |
 | FR2.3 | restricted token + Job Object + offline + audit hook | §3.5 | evil skill blocked | Built (no restricted token) |
 | FR3.1 | `update_plan` with dependencies, step sub-agents | §4.2–4.4 | live plan graph | Built |
-| FR3.2 | mail/calendar MCP, VS Code, git, notes | §3.6 | mail → calendar → code goal | Partly (no IMAP, calendar or IDE) |
+| FR3.2 | mail/calendar MCP, VS Code, git, notes | §3.6 | mail → calendar → code goal | Built (Gmail send verified live; VS Code tool; no IMAP or calendar) |
 | FR3.3 | typed verifier + failure ladder | §4.5 | failing patch fixed on retry | Built |
 | FR4.1 | trigger engine + headless sessions | §5.1–5.3 | invoice dropped → handled | Built (no calendar trigger) |
 | FR4.2 | candidate generators + toasts | §5.4 | meeting-prep toast | Built (rules, no model text) |
@@ -964,7 +964,7 @@ Runtime data lives outside the repo and outside OneDrive, in `%LOCALAPPDATA%\Rag
 | NFR1.2 | SQLCipher vault, wrapped key | §6.1–6.2 | header check | Built |
 | NFR1.3 | Ollama only, `OLLAMA_NO_CLOUD`, `-cloud` blocked | §6.4 | Proof panel | Built |
 | NFR2.1 | zero-LLM hot path | §2.4 | live p95 | Built, measured |
-| NFR2.2 | governor, idle gating, priority lane | §10 | idle gauge | Partly (background measured, inference not) |
+| NFR2.2 | governor, idle gating, priority lane | §10 | idle gauge | Built, measured (GPU above 30% during each answer; averaged about 11%) |
 | NFR3.1 | step isolation, circuit breakers | §4.5, §7.4 | calendar down, rest completes | Built |
 | NFR3.2 | event sourcing, log-before-act, idempotency keys | §7 | kill → resume timer, no duplicate | Built, measured |
 | NFR4.1 | reasons + tool scores + rules | §9.4 | transcript view | Built (`/log`, no Proof panel) |
