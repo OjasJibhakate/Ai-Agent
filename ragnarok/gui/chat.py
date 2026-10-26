@@ -153,6 +153,10 @@ class ChatWindow:
         if text.lower() in QUIT_WORDS:
             self.hide()
             return
+        self.ask(text)
+
+    def ask(self, text: str) -> None:
+        """Send a message as if it had been typed (the cat's menu uses this)."""
         if self.busy:
             self.note("Still working on the last one; I'll take this next.", t.DIM)
         self.bubble(text, me=True)

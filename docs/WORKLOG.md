@@ -640,3 +640,8 @@ Variety and follow-up robustness, `open_path` ("open the ppt you made"), latency
 - Cause: worker threads from `asyncio.to_thread(read_line / approve_line)` blocked on a queue are joined at interpreter exit. Reproduced in a 10-line script: the process hangs until killed.
 - Fix: `exit_now()` in `gui/app.py` ends the process after the window loop. New `tests/test_gui_exit.py` (a subprocess with a blocked worker exits in time). I stopped the stale process (by its PIDs).
 - Tests: **1508 pass, 3 skipped**, ruff clean.
+
+### 2026-10-26 (morning) - can the cat read the screen? (checked, no code change)
+- Owner: "make it know what is going on the screen so we can ask and make it do things". D-035 already has `read_screen` and `use_computer`; the open question was whether they work from the cat, whose chat popup is a borderless, topmost window in the agent's own process (the skill treats own-process windows as "the terminal" and minimizes them).
+- Checked with a scratch script (real Windows calls, real `qwen3.5:4b`, a fake borderless red topmost popup holding the focus): the popup was out of the captured frame, came back afterwards, and the answer described the real screen correctly. So reading works from the cat's window.
+- Not checked: `use_computer` from the cat (D-035 measured 5 of 15 on a test window), and a click-through of the real cat chat (my simulated click did not open the chat and the typing went to the focused terminal, so I stopped driving real input).

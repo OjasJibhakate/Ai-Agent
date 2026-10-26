@@ -27,6 +27,8 @@ from ragnarok.gui.chat import ChatWindow
 
 CAT_SCALE = Fraction(7, 4)  # screen pixels per cat pixel (7/4 keeps every outline pixel visible)
 FRAME_MS = 40
+SCREEN_QUESTION = "What is on my screen right now? Tell me briefly what I am looking at."
+SCREEN_ASK_DELAY_MS = 450  # long enough for the chat to take the focus first
 SINK = 2  # cat pixels the paws dip into the taskbar, so the cat stands on it rather than floats
 
 
@@ -108,6 +110,7 @@ class CatApp:
         self.chase_var = tk.BooleanVar(value=True)
         self.lively_var = tk.BooleanVar(value=False)
         self.menu.add_command(label="Open chat", command=self.open_chat)
+        self.menu.add_command(label="What's on my screen?", command=self.ask_about_screen)
         self.menu.add_command(label="Say hi", command=self.brain.poke)
         self.menu.add_command(label="Sleep here", command=self.brain.sleep_now)
         self.menu.add_checkbutton(
@@ -293,6 +296,14 @@ class CatApp:
         self.brain.poke()
         self.brain.anchored = True
         self.chat.show(self.root.winfo_x() + self.w // 2, self.root.winfo_y(), self.screen)
+
+    def ask_about_screen(self) -> None:
+        """Open the chat and ask what is on the screen, without the user having to word it.
+
+        The question waits a moment so the chat holds the focus: the screen skill moves the focused
+        window of this program out of the picture before it looks."""
+        self.open_chat()
+        self.root.after(SCREEN_ASK_DELAY_MS, lambda: self.chat.ask(SCREEN_QUESTION))
 
     def _chat_closed(self) -> None:
         self.brain.anchored = False
