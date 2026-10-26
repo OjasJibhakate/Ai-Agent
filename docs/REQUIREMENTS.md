@@ -2,7 +2,7 @@
 
 Honest status as of 2026-10-26. **Works** = built and covered by a test or a measurement you can re-run. **Partly** = the core works, a named piece does not. **Unproven** = built or plausible, but no measurement or live check backs the claim.
 
-Re-run everything: `uv run pytest -q` (1638 pass, 3 skipped), `uv run ruff check .`, and the benches named below.
+Re-run everything: `uv run pytest -q` (1735 pass, 3 skipped), `uv run ruff check .`, and the benches named below.
 
 ## Persistent memory (FR1, NFR4.2, NFR1.2)
 

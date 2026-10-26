@@ -119,6 +119,18 @@ class GuiConsole(Console):
     def notice(self, text: str) -> None:
         self.bridge.emit("notice", text=text)
 
+    def ready_for_input(self) -> None:
+        self.bridge.emit("idle")
+
+    def voice_state(self, on: bool) -> None:
+        self.bridge.emit("voice", on=on)
+
+    def wake_state(self, on: bool) -> None:
+        self.bridge.emit("wake", on=on)
+
+    def heard(self, text: str) -> None:
+        self.bridge.emit("heard", text=text)
+
     def error(self, text: str) -> None:
         self.bridge.emit("error", text=text)
 

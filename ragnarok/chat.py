@@ -58,6 +58,8 @@ from ragnarok.triggers.store import TriggerStore
 from ragnarok.triggers.toast import toast
 from ragnarok.triggers.tools import describe, trigger_tools
 from ragnarok.ui import Console, Welcome
+from ragnarok.voice import Voice, VoiceError, is_stop
+from ragnarok.wake import WakeListener
 
 BUNDLED_SKILLS = Path(__file__).resolve().parent.parent / "skills"  # `/skill add text-stats`
 LEARN_AFTER_SECONDS = 15.0  # idle time before the background learner starts (read at run time)
@@ -135,6 +137,7 @@ class ChatApp:
         maintenance: Callable[[], Awaitable[object]] | None = None,
         mode: Mode | None = None,
         role: str | None = None,
+        voice: Voice | None = None,
     ) -> None:
         self.rt = rt
         self.mode = mode or Mode.from_env(os.environ.get("RAGNAROK_MODE"))
@@ -211,6 +214,16 @@ class ChatApp:
         )
         self._proposals: list[tuple[str, dict]] = []
         self._restored = None  # what restore_state found at the start (recovery/restore.py)
+        self.voice = voice or Voice()  # /voice and /listen (ragnarok/voice.py)
+        self._handsfree = False  # /voice talk: listen, answer aloud, listen again
+        self._silences = 0
+        self._heard: str | None = None  # a sentence from /listen, used as the next message
+        self._wake: WakeListener | None = None  # "hey Ragnarok" (opt-in, /voice wake on)
+        self._wake_lines: asyncio.Queue[str] = asyncio.Queue()  # what the wake listener heard
+        self._read_task: asyncio.Task | None = None  # a typed line being waited for
+        self._wake_reply = False  # the next answer is read aloud because it was asked by voice
+        self._waking = False  # "hey Ragnarok" was heard and its request is not finished yet
+        self._mic = asyncio.Lock()  # one thing listens to the microphone at a time
         self._spinner = None  # the "thinking" animation of the turn in progress
         self._open_line = False  # the cursor is in the middle of a streamed line
         self._need_marker = False  # the next streamed text starts a new message
@@ -393,6 +406,7 @@ class ChatApp:
         row = await asyncio.to_thread(self.plans.get, plan_id)
         summary = result.summary(row.plan if row else Plan(goal, []))
         first, _, rest = summary.partition("\n")
+        await self._speak(first)
         marker = self.c.assistant_marker("done" if result.status == "done" else "warn")
         self.c.write()
         self.c.write(marker + first)
@@ -461,6 +475,8 @@ class ChatApp:
         if self.mode.name != "ask":
             self.c.notice(f"Mode: {self.mode.name} - {SUMMARY[self.mode.name]}. /mode changes it.")
         await self._restore()
+        if await asyncio.to_thread(self.rt.store.meta_get, "voice_wake") == "1":
+            await self._start_wake(remember=False)
         self.learner.schedule()  # catch up on earlier conversations while the user reads
         unread = await asyncio.to_thread(self.triggers.unread_count)
         if unread:
@@ -477,11 +493,7 @@ class ChatApp:
         try:
             while True:
                 try:
-                    line = (
-                        await asyncio.to_thread(
-                            self.read_line or input, self.c.prompt(f"{self.mode.name} mode")
-                        )
-                    ).strip()
+                    line = await self._next_line()
                 except (EOFError, KeyboardInterrupt):
                     self.c.write()
                     break
@@ -495,11 +507,248 @@ class ChatApp:
                     continue
                 await self._turn(line)
         finally:
+            await self._stop_wake(forget=False)
             await self.engine.stop()
             await self.learner.cancel()
             for task in self._background:
                 task.cancel()
         await self._goodbye()
+
+    async def _next_line(self) -> str:
+        """The next thing to act on: a /listen sentence, a hands-free sentence, or typing."""
+        self._waking = False  # whatever was asked before has been dealt with
+        if self._heard is not None:
+            line, self._heard = self._heard, None
+            return line
+        if self._handsfree:
+            return await self._hear()
+        if self._wake is not None and self._wake.active:
+            return await self._typed_or_woken()
+        return (
+            await asyncio.to_thread(
+                self.read_line or input, self.c.prompt(f"{self.mode.name} mode")
+            )
+        ).strip()
+
+    async def _typed_or_woken(self) -> str:
+        """Wait for typing or for "hey Ragnarok", whichever comes first."""
+        self.c.ready_for_input()  # the typing wait below may be one that is already running
+        if self._read_task is None:
+            prompt = self.c.prompt(f"{self.mode.name} mode")
+            self._read_task = asyncio.create_task(
+                asyncio.to_thread(self.read_line or input, prompt)
+            )  # kept across loops: a wake must not start a second read
+        woken = asyncio.create_task(self._wake_lines.get())
+        done, _ = await asyncio.wait({self._read_task, woken}, return_when=asyncio.FIRST_COMPLETED)
+        if woken in done:
+            return await self._after_wake(woken.result())
+        woken.cancel()
+        task, self._read_task = self._read_task, None
+        return task.result().strip()
+
+    def _pause_wake(self) -> None:
+        """Someone else wants the microphone: the wake listener lets go of it at once."""
+        if self._wake is not None:
+            self._wake.interrupt()
+
+    def _wake_paused(self) -> bool:
+        busy = self._spinner is not None or self._waking
+        return busy or self._handsfree or self.voice.busy_speaking
+
+    async def _on_wake(self, rest: str) -> None:
+        """ "Hey Ragnarok" was heard. Say what came after it, or listen for the request."""
+        self._waking = True  # do not listen for another wake phrase until this request is done
+        self._wake_lines.put_nowait(rest)
+
+    async def _after_wake(self, rest: str) -> str:
+        """The wake phrase turned into a message: the words after it, or one more sentence."""
+        self._wake_reply = True  # a request made by voice is answered aloud
+        await self.voice.chime("wake")  # a sound first: it heard you
+        if rest:
+            self.c.notice('Heard "hey Ragnarok".')
+            self.c.heard(rest)
+            return rest
+        self.c.notice("Yes? I'm listening - say your request now.")
+        self.c.voice_state(True)
+        try:
+            async with self._mic:
+                text = await self.voice.listen()
+        except VoiceError as exc:
+            self.c.error(str(exc))
+            return ""
+        finally:
+            self.c.voice_state(False)
+        if not text:
+            self._wake_reply = False
+            self._waking = False
+            await self.voice.chime("nothing")
+            self.c.notice('I did not hear a request. Say "hey Ragnarok" again when you are ready.')
+            return ""
+        self.c.heard(text)
+        return text
+
+    async def _start_wake(self, *, remember: bool) -> None:
+        if not self.voice.can_wake():
+            self.c.error(
+                "The wake phrase needs voice and the local Whisper model "
+                "(RAGNAROK_NO_VOICE is set, or faster-whisper is missing)."
+            )
+            return
+        self.voice.prepare()
+        if self._wake is None:
+            self._wake = WakeListener(
+                lock=self._mic,
+                transcribe=self.voice.wake_text,
+                on_wake=self._on_wake,
+                on_error=self._wake_failed,
+                paused=self._wake_paused,
+                record=self.voice.recorder,
+            )
+        self._wake.start()
+        if remember:
+            await asyncio.to_thread(self.rt.store.meta_set, "voice_wake", "1")
+        self.c.wake_state(True)
+        self.c.success('Listening for "hey Ragnarok". Say /voice wake off to stop.')
+
+    async def _stop_wake(self, *, forget: bool) -> None:
+        if self._wake is not None:
+            await self._wake.stop()
+        if forget:
+            await asyncio.to_thread(self.rt.store.meta_set, "voice_wake", "0")
+        self.c.wake_state(False)
+
+    def _wake_failed(self, text: str) -> None:
+        self.c.error(text)
+        self.c.wake_state(False)
+
+    def _set_handsfree(self, on: bool) -> None:
+        if on != self._handsfree:
+            self._handsfree = on
+            self.c.voice_state(on)  # the cat shows when it is listening
+
+    async def _hear(self) -> str:
+        """One hands-free sentence; "" means nothing was said (or voice mode just ended)."""
+        if self.voice.take_cancel():  # the cat was double-clicked again
+            self._set_handsfree(False)
+            self.c.notice("Voice mode is off.")
+            return ""
+        self.c.notice('Listening... (say "stop listening" to end)')
+        self._pause_wake()
+        try:
+            async with self._mic:
+                text = await self.voice.listen()
+        except VoiceError as exc:
+            self._set_handsfree(False)
+            self.c.error(str(exc))
+            return ""
+        if self.voice.take_cancel():
+            self._set_handsfree(False)
+            self.c.notice("Voice mode is off.")
+            return ""
+        if not text:
+            self.c.notice(self.voice.why_nothing())
+            self._silences += 1
+            if self._silences >= 2:
+                self._set_handsfree(False)
+                self.c.notice(
+                    "I heard nothing twice, so voice mode is off. Type /voice talk to resume."
+                )
+            return ""
+        self._silences = 0
+        if is_stop(text):
+            self._set_handsfree(False)
+            self.c.notice("Voice mode is off.")
+            return ""
+        self.c.heard(text)
+        return text
+
+    async def _speak(self, text: str) -> None:
+        """Read an answer aloud when voice is on; never let a speech problem break the chat."""
+        asked_by_voice, self._wake_reply = self._wake_reply, False
+        if not (self.voice.speaking or self._handsfree or asked_by_voice) or not text.strip():
+            return
+        try:
+            if self._handsfree:
+                await self.voice.say(text)  # finish before listening again
+            else:
+                self.voice.say_in_background(text)
+        except VoiceError as exc:
+            self.voice.speaking = False
+            self._set_handsfree(False)
+            self.c.error(str(exc))
+
+    async def _voice_command(self, arg: str) -> None:
+        arg = arg.strip().lower()
+        if arg in ("on", "off"):
+            self.voice.speaking = arg == "on"
+            if arg == "off":
+                self.voice.hush()
+            self.c.success(
+                "I will read my answers aloud." if arg == "on" else "Voice output is off."
+            )
+        elif arg in ("wake on", "wake"):
+            await self._start_wake(remember=True)
+        elif arg == "wake off":
+            await self._stop_wake(forget=True)
+            self.c.success("The wake phrase is off.")
+        elif arg == "test":
+            self.c.notice("Microphone test: say something for a few seconds...")
+            try:
+                self._pause_wake()
+                async with self._mic:
+                    report = await self.voice.diagnose()
+            except VoiceError as exc:
+                self.c.error(str(exc))
+                return
+            for line in report.splitlines():
+                self.c.write("   " + line)
+        elif arg == "talk":
+            self.voice.prepare()
+            if not self.voice.available:
+                self.c.error(
+                    "Voice is not available here (Windows only, RAGNAROK_NO_VOICE is not set)."
+                )
+                return
+            self._silences = 0
+            self._pause_wake()
+            self.voice.take_cancel()  # forget an old stop request
+            self._set_handsfree(True)
+            self.c.notice('Hands-free mode: speak after "Listening". Say "stop listening" to end.')
+        elif arg == "":
+            state = "on" if self.voice.speaking else "off"
+            voice = self.voice.name or "automatic, Indian English if installed"
+            self.c.notice(
+                f"Voice output is {state} ({voice}). "
+                "/voice on|off reads answers aloud; /listen takes one spoken message; "
+                "/voice talk is hands-free."
+            )
+        else:
+            self.c.notice("Usage: /voice on | off | talk | test | wake on | wake off")
+
+    async def _listen_command(self, arg: str = "") -> None:
+        """/listen: one spoken message; `/listen aloud` also reads the answer out (the cat)."""
+        self.voice.prepare()
+        self._pause_wake()
+        self.voice.take_cancel()  # forget an old stop request
+        self.c.notice("Listening... speak now.")
+        self.c.voice_state(True)  # the cat's window shows that the microphone is open
+        try:
+            async with self._mic:
+                text = await self.voice.listen()
+        except VoiceError as exc:
+            self.c.error(str(exc))
+            return
+        finally:
+            self.c.voice_state(False)  # one request only: the microphone closes here
+        if self.voice.take_cancel():
+            self.c.notice("Okay, I stopped listening.")
+            return
+        if not text:
+            self.c.notice(self.voice.why_nothing())
+            return
+        self.c.heard(text)
+        self._heard = text
+        self._wake_reply = arg.strip().lower() == "aloud"
 
     def _start_background_work(self) -> None:
         async def warm() -> None:
@@ -515,6 +764,7 @@ class ChatApp:
 
     async def _turn(self, text: str) -> None:
         await self.learner.cancel()  # you first: stop any background learning
+        self.voice.hush()  # a new message cuts the last answer's speech short
         spinner = self._spinner = self.c.spinner()
         spinner.start()
         PROGRESS.set(self._note)
@@ -553,6 +803,7 @@ class ChatApp:
         self.c.write()
         self.c.footer([(t.tool, t.allowed) for t in result.trace], result.total_ms / 1000)
         self.c.write()
+        await self._speak(result.text)
         self.learner.schedule()
 
     # ---- slash commands ----------------------------------------------------------------------
@@ -611,6 +862,10 @@ class ChatApp:
             await self._log_command(arg.strip())
         elif cmd == "/suggest":
             await self._suggest_command()
+        elif cmd == "/voice":
+            await self._voice_command(arg)
+        elif cmd == "/listen":
+            await self._listen_command(arg)
         else:
             self.c.error(f"Unknown command {cmd}. Try /help.")
         return False
@@ -764,6 +1019,7 @@ class ChatApp:
             self.c.alert("suggestion", item.title, item.body)
 
     async def _goodbye(self) -> None:
+        self.voice.hush()
         pending = await asyncio.to_thread(self.rt.store.pending_events, 1)
         note = "I'll finish learning from this chat next time." if pending else "See you soon."
         await self.c.farewell(note)

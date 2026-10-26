@@ -706,3 +706,40 @@ Owner: "complete these requirements". Audit first (FR1-FR4, NFR1-NFR4, 21 sub-re
 - **VS Code:** `open_in_editor` tool, tests with a fake editor, and a real-model task ("write hello.py, then open it in vs code") that passes. A live launch could not be verified: VS Code fails to start from the shell used here (`code --version` too, ICU file descriptor error), which looks like that environment, not the tool.
 - Tests: **1638 pass, 3 skipped**, ruff clean. Docs updated: `REQUIREMENTS.md` (22 of 22, two with stated readings), `HACKATHON.md`, `README.md`, `ARCHITECTURE.md`, `AGENTS.md`, D-052.
 - Not verified: the VS Code launch on the owner's own screen; the Gmail send more than the live runs above; the architecture page (published earlier) still says 1631 tests and "20 of 22".
+
+### 2026-10-26 (night) - voice: text to speech and speech to text (D-053)
+- Owner: "tts and stt mode, quickly", then "it is not taking my voice inputs, check it properly".
+- Built `ragnarok/voice.py` and `ragnarok/voice_capture.py`; `/voice on|off|talk|test` and `/listen` in the chat. **1672 tests pass**, ruff clean.
+- Live: speaking works (Zira, through the speakers). Listening: the first design failed, found by measuring: Windows allowed the microphone, the default input was the Bluetooth earbuds (silent), the laptop microphone peaked at 0.3-2% of full scale (input volume 36%), and the recogniser waited 30 s instead of 4. After recording the audio ourselves and boosting it, the sentence is detected but still misheard because the signal is so weak. Not fixed: needs the input volume raised.
+- Not done: a wake phrase; a microphone button on the cat; a better recogniser. Not verified: recognition with a properly loud microphone.
+
+### 2026-10-26 (night) - voice listening fixed with local Whisper (D-053 addendum)
+- Owner connected headphones and approved a new dependency ("Add local Whisper").
+- Found by measuring each stage: the pipeline (record, amplify, feed) was right; the Windows recogniser was the weak part (2% confidence on a real sentence, 39-52% on clean synthetic speech).
+- Added `faster-whisper` and `ragnarok/voice_whisper.py`; model downloaded once (29 s). Live, through the headset: "open steam and tell me what time it is" came back as "It is open screen and tell me what time it is." Whisper is used by default; Windows stays as the fallback. The model loads in the background on the first `/listen` or `/voice talk`.
+- Tests: **1678 pass, 3 skipped**, ruff clean (45 voice tests; the model and microphone are faked).
+- Not verified: accuracy on longer sentences, other accents or the laptop's own microphone; a wake phrase is not built; the cat has no microphone button yet.
+
+### 2026-10-26 (night) - double-click the cat to talk (D-053 addendum)
+- Owner: "if I double tap on the cat the voice should be activated".
+- Added `gui/clicks.py` (single versus double click), `Voice.cancel()`, `Console.voice_state` / `heard`, and the cat's handling in `gui/app.py` and `gui/chat.py`. **1686 tests pass**, ruff clean (8 new in `tests/test_gui_voice.py`).
+- Not verified live: restart the cat (right-click, Quit, then `meow`) and double-click it.
+
+### 2026-10-26 (night) - the wake phrase, and "it keeps listening" (D-053 addendum 2)
+- Owner: "set up a wake phrase hey ragnarok", then "it just keeps on listening, fix it".
+- Fixed: a double-click on the cat is now one request (`/listen aloud`), not a standing conversation; Whisper's inventions on noise are dropped.
+- Built `ragnarok/wake.py`, `/voice wake on|off`, the cat's menu item and header status. **1726 tests pass**, ruff clean (new: `tests/test_wake.py`, 38 tests).
+- Found by testing: a race (the wake loop could take the next sentence meant for the request) is closed by pausing it until the request is done. Live: the wake phrase did not trigger on the owner's headset (one burst heard as "I'm Waking Inside Video."); on clean synthetic speech it works 12 of 12.
+- Not verified: the wake phrase on the owner's voice; CPU use with it on for a long time; the cat's double-click on the real window (the cat must be restarted).
+
+### 2026-10-26 (night) - the wake phrase fixed, and Indian English
+- Owner: "it is not working the wake phrase", "set it to indian english", "try again".
+- Root causes found live (D-053 addendum 3): microphone input volume 36% (too quiet), then 100% (clipped); clips included 1.2 s of trailing silence so "hey Ragnarok" was rejected as a conversation; end-of-sentence judged only against room noise.
+- Fixed: trailing silence trimmed, end threshold relative to the speaker's peak, "too loud" warning, input volume set to 70%. Added `small.en` for requests (wake stays on `base.en`), the Indian-English prompt, an automatic English (India) voice when installed.
+- Live: the real wake listener woke on the owner's voice. **1727 tests pass**, ruff clean.
+- Not verified: longer spoken requests with `small.en`; the cat after a restart; an English (India) voice (none installed).
+
+### 2026-10-26 (night) - wake phrase: stuck on "thinking" (D-053 addendum 4)
+- Owner: the phrase is heard but then it just shows "thinking" and does not take the request.
+- Found: the window never got the "idle" signal again (a typing-wait kept running across loops). Fixed with `Console.ready_for_input`; added a chime and "Yes? I'm listening", "rangrok" spellings. **1735 tests pass**, ruff clean.
+- Not verified: on the owner's cat after a restart.

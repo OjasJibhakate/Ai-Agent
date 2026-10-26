@@ -472,6 +472,8 @@ class Console:
             ("/role R", "owner, editor, viewer or automation: what I may do at all"),
             ("/log", "which tools I used and why they were allowed (/log plan for steps)"),
             ("/suggest", "ideas from what I remember and what is going on"),
+            ("/voice M", 'on, off, talk, test, wake on|off (the phrase "hey Ragnarok")'),
+            ("/listen", "say one message out loud instead of typing it"),
             ("/clear", "clear the screen"),
             ("/quit", "leave (I keep learning from this chat)"),
         ]
@@ -543,6 +545,19 @@ class Console:
         self.write(f"   {paint(glyph)} {head}{tail}")
 
     # ---- things that arrive by themselves --------------------------------------------------
+
+    def ready_for_input(self) -> None:
+        """The engine waits for the next message (the cat's window stops showing "thinking")."""
+
+    def voice_state(self, on: bool) -> None:
+        """Hands-free voice mode started or ended (only the cat's window shows it)."""
+
+    def wake_state(self, on: bool) -> None:
+        """The wake phrase was turned on or off (only the cat's window shows it)."""
+
+    def heard(self, text: str) -> None:
+        """What the microphone understood, shown before it is acted on."""
+        self.write("   " + self.faint("heard:") + " " + text)
 
     def alert(self, kind: str, title: str, body: str = "") -> None:
         """Something happened on its own (a reminder came due, a file arrived)."""

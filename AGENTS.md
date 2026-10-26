@@ -15,7 +15,7 @@ Ragnarok is a local, always-on personal agent for the IIIT hackathon. Every mode
 **Focus: the five pillars the PDF stresses.** These are **skills (FR2), planning (FR3), triggers (FR4), encryption (NFR1.2),
 and recovery (NFR3)**. Memory, UI, and everything else exist to support them. When in doubt, spend the time on a pillar.
 
-**Current stage (2026-10-26):** all five pillars and the memory milestones M0-M5 are built, tested and measured (1638 tests); all 22 checklist items have a test or a measurement. Open gaps: VS Code launch unverified live, no IMAP or external project-management product, GPU above 30% during each answer. Evidence per requirement: `docs/REQUIREMENTS.md`; judge guide: `docs/HACKATHON.md`.
+**Current stage (2026-10-26):** all five pillars and the memory milestones M0-M5 are built, tested and measured (1735 tests); all 22 checklist items have a test or a measurement. Open gaps: VS Code launch unverified live, no IMAP or external project-management product, GPU above 30% during each answer. Evidence per requirement: `docs/REQUIREMENTS.md`; judge guide: `docs/HACKATHON.md`.
 
 ## Hard rules (never break)
 
@@ -41,6 +41,7 @@ Models must show `100% GPU` in `ollama ps`. Keep the laptop in hybrid (Optimus) 
 - **Runtime:** asyncio · httpx · pydantic (no web server; the interfaces are the terminal chat and the tkinter pixel cat)
 - **Storage:** `sqlcipher3` (SQLCipher + FTS5) · numpy
 - **Windows integration:** `pywin32` (DPAPI, Job Objects, window titles) · `argon2-cffi` + `cryptography` (key wrapping) · toasts through PowerShell (no extra library)
+- **Voice:** Windows `System.Speech` for speaking; `faster-whisper` (CPU, `base.en`, downloaded once) for listening, with the Windows recogniser as fallback
 - **Tools and triggers:** standard library only: a polling folder watcher (no `watchdog`), `email`/`smtplib` for mail (no `mcp`); `pypdf` for PDFs
 - **CLI:** argparse + our own `Console` (no Typer or Rich)
 - **UI:** the pixel cat (`ragnarok/gui/`, tkinter). No web UI, tray icon or Proof panel was built

@@ -12,7 +12,7 @@ Then: [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) (the 22-item tracker with e
 
 Target machine: HP OMEN 16, i5-13420H, 16 GB RAM, RTX 4050 6 GB, Windows 11, no WSL or Docker.
 
-*Last updated: 2026-10-26 (IST). 1638 tests pass, 3 skipped, `ruff` clean.*
+*Last updated: 2026-10-26 (IST). 1735 tests pass, 3 skipped, `ruff` clean.*
 
 ---
 
@@ -48,7 +48,7 @@ uv run python -m ragnarok chat     # talk to it: "remember that ...", "open stea
 Other ways in:
 
 ```powershell
-uv run python -m ragnarok gui                  # the pixel cat on your taskbar; click it to chat
+uv run python -m ragnarok gui                  # the pixel cat on your taskbar; click it to chat, double-click to speak one request (answered aloud), or turn on the wake phrase
 uv run python -m ragnarok gui --command on     # then typing `meow` anywhere starts the cat
 uv run python -m ragnarok daemon               # reminders, schedules and watches with no chat open
 uv run python -m ragnarok daemon --startup on  # start the daemon at Windows login (needs automatic unlock)
@@ -68,6 +68,8 @@ Inside `chat`:
 | `/mode ask\|edits\|full` | how much it does without asking |
 | `/role owner\|editor\|viewer\|automation` | what it may do at all; going to a role with more rights asks you |
 | `/log`, `/log plan` | which tools ran, the reason, the permission rule and the result; a plan's steps |
+| `/voice wake on\|off` | the wake phrase "hey Ragnarok" (opt-in, remembered, also in the cat's right-click menu): say it, then your request, and the answer is read aloud |
+| `/voice on\|off\|talk\|test`, `/listen` | read answers aloud; hands-free conversation; check the microphone; say one message instead of typing it (speech to text with a local Whisper model, text to speech with Windows' voices; the microphone only opens on these commands) |
 | `/clear`, `/quit` | clear the screen; leave (it keeps learning and finishes next time) |
 
 Memory controls: `memory list|search|show|history|forget|archive|restore`, `memory pin|unpin N`, `memory correct N --text "the right fact"`,
@@ -83,6 +85,8 @@ Sending mail asks in every mode.
 Screen: `look at my screen and tell me what is open` reads it (one screenshot, kept in memory only). `use the mouse and keyboard to ...` lets it act, after you say yes; hold Esc or move the mouse to stop it, and it never types into a terminal.
 Acting is experimental (13 of 15 on our test window, D-046; untested on real browsers or Office). `RAGNAROK_NO_SCREEN=1` turns both off.
 `RAGNAROK_NO_DOWNLOADS=1` turns the downloads off.
+
+Voice settings: speech to text is tuned for Indian English (`RAGNAROK_ACCENT=us` turns that off); `RAGNAROK_MIC` picks the microphone; `RAGNAROK_VOICE` picks the voice (automatic: an English (India) voice if installed); `RAGNAROK_NO_VOICE=1` turns voice off.
 
 Mail: a folder of `.eml` files at `%LOCALAPPDATA%\Ragnarok\mail\inbox` (or `RAGNAROK_MAIL_DIR`); `send_mail` writes to `outbox`. `fixtures\mailbox` has two sample messages, one hostile.
 
@@ -204,7 +208,7 @@ ragnarok/
 skills/          user-facing skills (SKILL.md + skill.json), e.g. text-stats
 fixtures/        evil-skill (hostile test skill), mailbox (sample .eml files)
 bench/           benchmarks; results in bench/results/
-tests/           1638 tests, one file per area
+tests/           1735 tests, one file per area
 docs/            HACKATHON.md  REQUIREMENTS.md  MEMORY.md  DECISIONS.md  WORKLOG.md  history/
 ```
 

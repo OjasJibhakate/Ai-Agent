@@ -36,6 +36,9 @@ class ChatWindow:
         self._queued: list[str] = []  # lines typed before the engine was ready
         self._assistant: tk.Label | None = None  # the bubble being streamed into
         self._dots = 0
+        self._wake_on = False
+        self._voice_on = False
+        self._status = ""
 
         top = self.top = tk.Toplevel(root)
         top.withdraw()
@@ -242,7 +245,8 @@ class ChatWindow:
             self._to_bottom()
 
     def on_welcome(self, model: str, memories: int, gpu: str, first_run: bool) -> None:
-        self.status.config(text=f"{model} · {gpu}")  # short: the window is narrow
+        self._status = f"{model} · {gpu}"  # short: the window is narrow
+        self.status.config(text=self._status)
         if first_run:
             self.bubble(
                 "Hi! I'm Ragnarok. Everything runs on this laptop.\n\nTry: “remember that I prefer "
@@ -261,6 +265,26 @@ class ChatWindow:
         self.note(
             "Ragnarok is not running. Quit it from the cat's menu and start it again.", t.CORAL
         )
+
+    def on_wake(self, on: bool) -> None:
+        """The wake phrase was turned on or off."""
+        self._wake_on = on
+        self.on_voice(self._voice_on)
+
+    def on_voice(self, on: bool) -> None:
+        """The microphone is open for a request (or a hands-free conversation), or closed again."""
+        self._voice_on = on
+        if on:
+            self.status.config(text="● listening", fg=t.VIOLET)
+        elif self._wake_on:
+            self.status.config(text="● wake: hey Ragnarok", fg=t.VIOLET)
+        else:
+            self.status.config(text=self._status, fg=t.DIM)
+
+    def on_heard(self, text: str) -> None:
+        """A sentence the microphone understood: shown like something typed."""
+        self.bubble(text, me=True)
+        self.set_busy(True)
 
     def on_idle(self) -> None:
         self.ready = True

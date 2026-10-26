@@ -24,6 +24,7 @@ from ragnarok.gui import theme as t
 from ragnarok.gui.brain import CatBrain
 from ragnarok.gui.bridge import Bridge, GuiConsole
 from ragnarok.gui.chat import ChatWindow
+from ragnarok.gui.clicks import DoubleClick
 
 CAT_SCALE = Fraction(7, 4)  # screen pixels per cat pixel (7/4 keeps every outline pixel visible)
 FRAME_MS = 40
@@ -81,6 +82,11 @@ class CatApp:
         )
         self.images = self._build_images()
         self.unseen = False  # something happened while the chat was closed
+        self.voice_active = False  # hands-free voice mode is on
+        self.app = None  # the ChatApp, once the engine thread has made it
+        self.clicks = DoubleClick(
+            root.after, root.after_cancel, self.toggle_chat, self.toggle_voice
+        )
 
         root.overrideredirect(True)
         root.attributes("-topmost", True)
@@ -111,6 +117,11 @@ class CatApp:
         self.lively_var = tk.BooleanVar(value=False)
         self.menu.add_command(label="Open chat", command=self.open_chat)
         self.menu.add_command(label="What's on my screen?", command=self.ask_about_screen)
+        self.menu.add_command(label="Talk to me (double-click)", command=self.toggle_voice)
+        self.wake_var = tk.BooleanVar(value=False)
+        self.menu.add_checkbutton(
+            label='Wake phrase: "hey Ragnarok"', variable=self.wake_var, command=self._toggle_wake
+        )
         self.menu.add_command(label="Say hi", command=self.brain.poke)
         self.menu.add_command(label="Sleep here", command=self.brain.sleep_now)
         self.menu.add_checkbutton(
@@ -177,6 +188,7 @@ class CatApp:
             rt, GuiConsole(self.bridge), folder=str(self.home),
             read_line=self.bridge.read_line, approve_line=self.bridge.approve_line,
         )  # fmt: skip
+        self.app = app
         try:
             await app.run()
         finally:
@@ -225,6 +237,14 @@ class CatApp:
     def _event(self, kind: str, data: dict) -> None:
         self.chat.handle(kind, data)
         hidden = not self.chat.visible
+        if kind == "wake":
+            self.wake_var.set(bool(data.get("on")))
+        if kind == "voice":
+            self.voice_active = bool(data.get("on"))
+            if self.voice_active:
+                self.brain.alert()  # ears up while it listens
+            else:
+                self.brain.clear_alert()
         if kind == "alert" and hidden:
             self.unseen = True
             self.brain.alert()
@@ -254,7 +274,7 @@ class CatApp:
         if self._moved:
             self.brain.drop()  # it falls from where you let go, bounces, and lands
         else:
-            self.toggle_chat()
+            self.clicks.click()  # one click: the chat; two clicks: a voice conversation
         self.canvas.config(cursor="hand2")
         self._press_at = None
 
@@ -304,6 +324,18 @@ class CatApp:
         window of this program out of the picture before it looks."""
         self.open_chat()
         self.root.after(SCREEN_ASK_DELAY_MS, lambda: self.chat.ask(SCREEN_QUESTION))
+
+    def _toggle_wake(self) -> None:
+        self.bridge.send("/voice wake on" if self.wake_var.get() else "/voice wake off")
+
+    def toggle_voice(self) -> None:
+        """Double-click: open the chat and take ONE spoken request (answered aloud), or cancel it."""
+        if self.voice_active:
+            if self.app is not None:
+                self.app.voice.cancel()  # the engine ends voice mode at its next step
+            return
+        self.open_chat()
+        self.bridge.send("/listen aloud")  # one request, answered aloud, then it stops listening
 
     def _chat_closed(self) -> None:
         self.brain.anchored = False

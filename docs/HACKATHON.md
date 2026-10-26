@@ -113,7 +113,7 @@ Status: **Done** = built and covered by a test or measurement. **Partly** = the 
 | Retrieval + intent under 800 ms | about 125 ms (embedding p95 117 ms + search p95 6.7 ms + intent 0.013 ms) | `uv run python bench/resource_bench.py` |
 | Background and inference under 30% | engine 0.05%; Ollama 0.0% CPU idle, 8.3% generating; GPU 3.8% idle, 78% during an answer, about 11% averaged | `uv run python bench/resource_bench.py` and `uv run python bench/inference_bench.py` |
 | Restore within 5 s | restart p95 89 ms, max 223 ms, 50 of 50 | `uv run python bench/recovery_bench.py` |
-| Tests | 1638 pass, 3 skipped, lint clean | `uv run pytest -q` and `uv run ruff check .` |
+| Tests | 1735 pass, 3 skipped, lint clean | `uv run pytest -q` and `uv run ruff check .` |
 | Real-model tasks | mail, task and Gmail prompts pick the right tool and finish | `uv run python -m bench.daily_tasks "mail,task"` |
 | Screen control (experimental) | 13 of 15 on a live test window | `bench/screen_eval.py` |
 
