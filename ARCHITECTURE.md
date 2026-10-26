@@ -6,7 +6,7 @@
 
 | | |
 |---|---|
-| Status | Design v2, 2026-10-25. Nothing here is built or measured yet. Figures marked *target* or *estimate* must be confirmed with `bench/`. |
+| Status | Design v2 (2026-10-25), **updated 2026-10-26 with what was built**: see section 0.1. Sections 2-12 still describe the original design; where the build differs, 0.1 and the dated notes in sections 5.4, 7.3 and 9.1 say so. Measured numbers: `docs/REQUIREMENTS.md`. |
 | Requirements | `Ragnarok A Sovereign, Always-On Personal AI Agent.pdf` (FR1–FR4, NFR1–NFR4) |
 | Focus | The five things the PDF stresses: **skills, planning, triggers, encryption, recovery** |
 | Related | `AGENTS.md` (project context) · `docs/DECISIONS.md` (why) · `docs/WORKLOG.md` (what happened) · `docs/history/` (earlier versions) |
@@ -40,6 +40,23 @@ notes, and code. The design is built around five pillars; everything else suppor
 | Embeddings | `nomic-embed-text` (768-d), also resident |
 | Storage | One SQLCipher file in `%LOCALAPPDATA%\Ragnarok\` (outside OneDrive) |
 | Not used | Docker, WSL, Electron, Redis, Postgres, vector-DB servers, any cloud API |
+
+### 0.1 Built versus designed (2026-10-26)
+
+| Area | Designed | Built | Difference and why |
+|---|---|---|---|
+| Processes | daemon + web UI + `rag` CLI | the chat or the pixel cat holds the runtime; `rag daemon` is an optional second process | No web server: the cat (tkinter) and the terminal replaced the web UI and Proof panel (D-044) |
+| Skills | `SKILL.md` + YAML, plus MCP servers | `SKILL.md` + `skill.json`, registered with tests, approval and a content hash (D-047) | No YAML library installed and no new dependency allowed without a decision; no MCP servers built |
+| Sandbox | restricted token + Job Object + offline + audit hook | Job Object (memory and process caps, kill on close) + scrubbed environment + audit hook + narrow I/O | **No restricted token and no firewall rule**, so "offline" is by environment and hook. Built-in tools are not sandboxed; they use path guards and approvals |
+| Planning | sub-agent per step, typed verifier, failure ladder | as designed, sequential steps (D-043) | `done_when` checks only where reliable |
+| Triggers | cron, folder, mail, calendar | date, cron, folder, mailbox-folder (`.eml`) | No calendar trigger; the folder watcher polls (no `watchdog`) |
+| Suggestions | generators + model-written text, toasts | rule-based, no model call (D-049) | Four patterns; fixed wording |
+| Daemon | Task Scheduler task, restart on failure | `rag daemon` with a lock file and heartbeat; `--startup on` puts a launcher in the Startup folder | Simpler; hidden start needs the DPAPI unlock opt-in |
+| Recovery | snapshots, replay, idempotency keys, in-flight resolution | `restore_state` over the event log and plan tables; cut-off calls closed and flagged (D-048) | No snapshots (replay is milliseconds); `/resume` asks before repeating a non-idempotent call |
+| Mail and calendar | mail/calendar MCP servers | local `.eml` mailbox folder, Gmail through the user's browser (D-050) | No stored account password; no calendar; no IMAP |
+| Permissions | profiles, allow/ask/deny, hooks | profiles + modes + roles (D-051); sending mail always asks | No hooks |
+| Explainability | decision trace, Proof panel | `/log`, `/log plan`, `rag log` | No Proof panel |
+| Memory | FR1 design in `docs/MEMORY.md` | milestones M0-M5 built | Turbovec exact-search default (D-026) |
 
 ---
 
@@ -930,33 +947,35 @@ Runtime data lives outside the repo and outside OneDrive, in `%LOCALAPPDATA%\Rag
 
 ## 13. Requirements traceability
 
-| Req | Mechanism | Section | Shown in the demo by |
-|---|---|---|---|
-| FR1.1 | event log + summaries | §7.1, §8 | "what did I decide about X yesterday?" |
-| FR1.2 | typed notes + FTS + embeddings | §8 | saved preference used when scheduling |
-| FR1.3 | compaction, idle consolidation, salience forgetting | §8.4 | Memory page: superseded/archived notes |
-| FR2.1 | `SKILL.md` + MCP registration with tests and hashes | §3.3 | `rag skill add` live |
-| FR2.2 | embedding top-k + native tool calls + schema validation | §3.4 | decision trace in the transcript |
-| FR2.3 | restricted token + Job Object + offline + audit hook | §3.5 | evil skill blocked |
-| FR3.1 | `update_plan` with dependencies, step sub-agents | §4.2–4.4 | live plan graph |
-| FR3.2 | mail/calendar MCP, VS Code, git, notes | §3.6 | mail → calendar → code goal |
-| FR3.3 | typed verifier + failure ladder | §4.5 | failing patch fixed on retry |
-| FR4.1 | trigger engine + headless sessions | §5.1–5.3 | invoice dropped → handled |
-| FR4.2 | candidate generators + toasts | §5.4 | meeting-prep toast |
-| NFR1.1 | loopback gateway, egress monitor | §6.4 | Proof: 0 external connections |
-| NFR1.2 | SQLCipher vault, wrapped key | §6.1–6.2 | header check |
-| NFR1.3 | Ollama only, `OLLAMA_NO_CLOUD`, `-cloud` blocked | §6.4 | Proof panel |
-| NFR2.1 | zero-LLM hot path | §2.4 | live p95 |
-| NFR2.2 | governor, idle gating, priority lane | §10 | idle gauge |
-| NFR3.1 | step isolation, circuit breakers | §4.5, §7.4 | calendar down, rest completes |
-| NFR3.2 | event sourcing, log-before-act, idempotency keys | §7 | kill → resume timer, no duplicate |
-| NFR4.1 | reasons + tool scores + rules | §9.4 | transcript view |
-| NFR4.2 | Memory page + CLI + cascading delete | §8.5 | delete a memory live |
-| NFR4.3 | profiles, allow/ask/deny, approvals | §9 | approval prompt for event creation |
+| Req | Mechanism | Section | Shown in the demo by | Status (2026-10-26) |
+|---|---|---|---|---|
+| FR1.1 | event log + summaries | §7.1, §8 | "what did I decide about X yesterday?" | Built |
+| FR1.2 | typed notes + FTS + embeddings | §8 | saved preference used when scheduling | Built |
+| FR1.3 | compaction, idle consolidation, salience forgetting | §8.4 | Memory page: superseded/archived notes | Built |
+| FR2.1 | `SKILL.md` + MCP registration with tests and hashes | §3.3 | `rag skill add` live | Built (`skill.json`, no MCP) |
+| FR2.2 | embedding top-k + native tool calls + schema validation | §3.4 | decision trace in the transcript | Built (schema + description, no embedding top-k) |
+| FR2.3 | restricted token + Job Object + offline + audit hook | §3.5 | evil skill blocked | Built (no restricted token) |
+| FR3.1 | `update_plan` with dependencies, step sub-agents | §4.2–4.4 | live plan graph | Built |
+| FR3.2 | mail/calendar MCP, VS Code, git, notes | §3.6 | mail → calendar → code goal | Partly (no IMAP, calendar or IDE) |
+| FR3.3 | typed verifier + failure ladder | §4.5 | failing patch fixed on retry | Built |
+| FR4.1 | trigger engine + headless sessions | §5.1–5.3 | invoice dropped → handled | Built (no calendar trigger) |
+| FR4.2 | candidate generators + toasts | §5.4 | meeting-prep toast | Built (rules, no model text) |
+| NFR1.1 | loopback gateway, egress monitor | §6.4 | Proof: 0 external connections | Built (no egress monitor) |
+| NFR1.2 | SQLCipher vault, wrapped key | §6.1–6.2 | header check | Built |
+| NFR1.3 | Ollama only, `OLLAMA_NO_CLOUD`, `-cloud` blocked | §6.4 | Proof panel | Built |
+| NFR2.1 | zero-LLM hot path | §2.4 | live p95 | Built, measured |
+| NFR2.2 | governor, idle gating, priority lane | §10 | idle gauge | Partly (background measured, inference not) |
+| NFR3.1 | step isolation, circuit breakers | §4.5, §7.4 | calendar down, rest completes | Built |
+| NFR3.2 | event sourcing, log-before-act, idempotency keys | §7 | kill → resume timer, no duplicate | Built, measured |
+| NFR4.1 | reasons + tool scores + rules | §9.4 | transcript view | Built (`/log`, no Proof panel) |
+| NFR4.2 | Memory page + CLI + cascading delete | §8.5 | delete a memory live | Built (CLI and chat, no Memory page) |
+| NFR4.3 | profiles, allow/ask/deny, approvals | §9 | approval prompt for event creation | Built (modes + roles, no hooks) |
 
 ---
 
 ## 14. Build plan (4 people, ~36 h, pillars first)
+
+> *Historical plan.* The build followed memory first (M0-M5), then the pillars; what exists now is in section 0.1.
 
 | Person | Owns |
 |---|---|
@@ -983,6 +1002,8 @@ If you fall behind, cut from the bottom of this list:
 ---
 
 ## 15. Demo script (~6 minutes, fixtures only, no network needed)
+
+> *Original script.* It assumes a plan graph, a Proof panel, MCP servers and Task Scheduler, which were not built. **The script to use is `docs/HACKATHON.md` section 6.**
 
 1. **Encryption.** `rag doctor` shows Ollama local-only ✓, `qwen3.5:4b` at 100% GPU ✓, vault encrypted ✓ (show the header bytes), and sandbox ✓.
    The Proof panel stays open on a second screen.

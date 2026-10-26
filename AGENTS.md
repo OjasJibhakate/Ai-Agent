@@ -15,7 +15,7 @@ Ragnarok is a local, always-on personal agent for the IIIT hackathon. Every mode
 **Focus: the five pillars the PDF stresses.** These are **skills (FR2), planning (FR3), triggers (FR4), encryption (NFR1.2),
 and recovery (NFR3)**. Memory, UI, and everything else exist to support them. When in doubt, spend the time on a pillar.
 
-**Current stage:** memory milestones M0-M5 done (vault, keys, extraction, retrieval, summaries, forgetting, controls, chat loop, CLI, app and file skills; see `ragnarok/persistent_memory.py`). Other pillars are design only.
+**Current stage (2026-10-26):** all five pillars and the memory milestones M0-M5 are built, tested and measured (1631 tests). Open gaps: a real Gmail send, real IMAP/IDE/project-management integration, inference measured against the 30% target. Evidence per requirement: `docs/REQUIREMENTS.md`; judge guide: `docs/HACKATHON.md`.
 
 ## Hard rules (never break)
 
@@ -38,16 +38,16 @@ Models must show `100% GPU` in `ollama ps`. Keep the laptop in hybrid (Optimus) 
 ## Stack
 
 - **Python:** 3.12 via uv. Don't use the Microsoft Store Python 3.13.
-- **Runtime:** asyncio · Starlette/FastAPI + WebSocket JSON-RPC · httpx
+- **Runtime:** asyncio · httpx · pydantic (no web server; the interfaces are the terminal chat and the tkinter pixel cat)
 - **Storage:** `sqlcipher3` (SQLCipher + FTS5) · numpy
-- **Windows integration:** `pywin32` (DPAPI now; sandbox tokens and Job Objects later) · `argon2-cffi` + `cryptography` (key wrapping, installed) · `keyring` · `pystray` · `windows-toasts` (the last three not installed yet)
-- **Tools and triggers:** `mcp` · `watchdog`
-- **CLI:** Typer + Rich
-- **UI:** React + Vite + Tailwind
+- **Windows integration:** `pywin32` (DPAPI, Job Objects, window titles) · `argon2-cffi` + `cryptography` (key wrapping) · toasts through PowerShell (no extra library)
+- **Tools and triggers:** standard library only: a polling folder watcher (no `watchdog`), `email`/`smtplib` for mail (no `mcp`); `pypdf` for PDFs
+- **CLI:** argparse + our own `Console` (no Typer or Rich)
+- **UI:** the pixel cat (`ragnarok/gui/`, tkinter). No web UI, tray icon or Proof panel was built
 - **Quality:** pytest · ruff
 - **Models:** `qwen3.5:4b` (chat, final pick after `bench/llm_bench.py`) · `nomic-embed-text` (embeddings)
 
-## Setup and commands (planned)
+## Setup and commands
 
 ```powershell
 winget install Ollama.Ollama
@@ -57,15 +57,17 @@ ollama pull qwen3.5:4b
 ollama pull nomic-embed-text
 uv python install 3.12
 uv sync
-uv run rag doctor              # Ollama local-only, GPU share, vault, sandbox
-uv run rag daemon              # daemon + UI on http://127.0.0.1:8765
-uv run rag                     # interactive CLI
+uv run python -m ragnarok doctor   # Ollama local-only, GPU share, vault, encryption
+uv run python -m ragnarok init     # once: passphrase and recovery code
+uv run python -m ragnarok chat     # interactive chat (slash commands: /help)
+uv run python -m ragnarok gui      # the pixel cat (after `gui --command on`, type `meow`)
+uv run python -m ragnarok daemon   # background triggers with no chat open
+uv run python -m ragnarok log      # what the agent did and why it was allowed
 uv run pytest -q
-uv run ruff check . ; uv run ruff format .
-uv run python -m bench.llm_bench       # run benches as modules so `ragnarok` imports
-uv run python -m bench.embed_bench
-uv run python -m bench.recovery_bench  # planned
-cd ui ; npm install ; npm run build      # outputs to ragnarok/ui_dist
+uv run ruff check .                # run `ruff format` only on files you changed
+uv run python -m bench.llm_bench   # run benches as modules so `ragnarok` imports
+uv run python bench/recovery_bench.py   # NFR3.2, kill and resume
+uv run python bench/resource_bench.py   # NFR2, background cost and hot-path latency
 ```
 
 ## Dev environment notes (this laptop)
@@ -75,15 +77,16 @@ cd ui ; npm install ; npm run build      # outputs to ragnarok/ui_dist
 - **uv** is at the winget path; open a new shell or refresh PATH if `uv` isn't found. The project venv is `.venv` (Python 3.12).
 - Run tests with `uv run pytest -q`. Don't run `ruff format` on markdown; the config already excludes it.
 - The repo clone lives at `C:\Users\parth\dev\Ai-Agent` (outside OneDrive on purpose).
-- **Current focus: persistent memory** (`docs/MEMORY.md`, milestones M0-M6). Other pillars are optional.
+- **Current focus:** the five pillars are built; what is left is in `docs/REQUIREMENTS.md` (real Gmail send, IMAP, IDE integration, inference vs the 30% target).
+- Files are written with LF line endings. On Windows, Python's text-mode `open(..., 'w')` writes CRLF; pass `newline=''`.
 
 ## Where things go
 
 - **Pillars:** `ragnarok/skills/` + `ragnarok/sandbox/` (skills) · `ragnarok/planning/` · `ragnarok/triggers/` ·
   `ragnarok/vault/` (encryption) · `ragnarok/recovery/`
 - **Runtime:** loop, context, hot path, and gateway in `ragnarok/runtime/`. Prompts are text files in `ragnarok/runtime/prompts/`.
-- **Skill content:** user-facing skills in `skills/<name>/SKILL.md`. Our MCP servers in `mcp_servers/`.
-- **Test data:** test fixtures (mailbox, calendar, invoices, demo repo, evil skill) in `fixtures/`. Never use real accounts in tests.
+- **Skill content:** user-facing skills in `skills/<name>/` (`SKILL.md` + `skill.json` + scripts); registered with `/skill add`. No MCP servers were built (mail, tasks and the other tools are in `ragnarok/skills/`).
+- **Test data:** test fixtures (`mailbox`, `evil-skill`; calendar, invoices and a demo repo were not needed) in `fixtures/`. Never use real accounts in tests.
 
 Full tree: `ARCHITECTURE.md` §12.
 
@@ -94,7 +97,7 @@ Full tree: `ARCHITECTURE.md` §12.
 - Keep the shared system-prompt prefix identical across call types, because prompt-cache reuse depends on it.
 - **Tests:**
   - every tool gets a schema test and a permission test;
-  - every skill ships with its own tests in `SKILL.md`;
+  - every skill ships with its own tests in `skill.json` (they run in the sandbox before it registers);
   - anything touching side effects gets a kill-and-resume test.
 - If you touch the hot path (retrieval, intent, gateway), run `bench/` and record the numbers in `docs/WORKLOG.md`.
 - Keep PRs small, and have the area owner review.
@@ -120,4 +123,4 @@ Full tree: `ARCHITECTURE.md` §12.
 - Tests pass and `ruff` is clean.
 - No hard rule is broken.
 - Docs and logs are updated.
-- The demo still works: `rag demo reset`, then walk the `ARCHITECTURE.md` §15 script.
+- The demo still works: walk the script in `docs/HACKATHON.md` section 6 (there is no `rag demo reset`).

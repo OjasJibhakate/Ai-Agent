@@ -1,6 +1,6 @@
 # Ragnarok — Persistent Memory Spec
 
-> **Status:** v1 plan, 2026-10-25. This is the team's initial plan, refined for this laptop and the PDF requirements.
+> **Status (2026-10-26):** milestones M0-M5 are built, tested and measured (see `README.md` and `docs/WORKLOG.md`); M6 (held-out evaluation, final numbers) is open. Originally a v1 plan, 2026-10-25. This is the team's initial plan, refined for this laptop and the PDF requirements.
 > Persistent memory is **the primary goal of the project**; every other subsystem is optional.
 > Numbers are targets until `bench/` measures them on the target laptop (RTX 4050 6 GB, 16 GB RAM).
 

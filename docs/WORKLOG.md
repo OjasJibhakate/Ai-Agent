@@ -689,3 +689,12 @@ Owner: "complete these requirements". Audit first (FR1-FR4, NFR1-NFR4, 21 sub-re
 - Real model (`bench.daily_tasks`): "open gmail and write" picks `compose_email`, "open gmail, write and send" picks `send_gmail`, 3 of 3 with the send key stubbed.
 - Real browser (the owner's Edge, send key stubbed so nothing was emailed): found by trying it. The first version took a flicker of the tab title during Gmail's start-up ("Untitled") for a changed window and refused; and its "sent" check could be fooled by the front window changing. Now the compose title must hold for 2 s, and the check follows the compose window itself. Final run: it found the compose window, "pressed" the stub, and correctly reported the draft still open.
 - Not verified: a real Ctrl+Enter send (I did not email anyone). My four test runs left about five Gmail draft tabs open in Edge.
+
+### 2026-10-26 (night) - every doc brought up to date with the build
+- Owner: "update all files to latest like README and any previous files according to present state".
+- `README.md` rewritten: status at a glance, the real commands (`gui`, `daemon`, `log`, slash commands incl. `/role`, `/log`, `/suggest`), done and remaining tables, measured table with the new benches, layout with every new folder, privacy rules for mail.
+- `AGENTS.md`: current stage (all pillars built), the stack as it really is (no web server, Typer, MCP or watchdog), real setup commands, skill format (`skill.json`), definition of done points at `docs/HACKATHON.md` section 6, and a note that Windows Python writes CRLF unless `newline=''`. `CLAUDE.md`: two stale phrases fixed.
+- `ARCHITECTURE.md`: status row, new section 0.1 "Built versus designed" (what differs and why), a status column in section 13, and notes on sections 14 and 15 that they are historical. `docs/MEMORY.md`: status line.
+- `ARCHITECTURE-1.md` (an older "J.A.R.V.I.S." draft, which the project rules say not to use as a framing) moved to `docs/history/ARCHITECTURE-v0-team-jarvis.md` instead of being deleted.
+- The copies in the OneDrive project folder (`README.md`, `AGENTS.md`, `CLAUDE.md`, `ARCHITECTURE.md`, `docs/*.md`) were stale and were overwritten from the repository.
+- Not verified: I did not re-run the benchmarks for this entry; the numbers are the ones already recorded above.
